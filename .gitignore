@@ -1,0 +1,185 @@
+# =========================================================
+# macOS
+# =========================================================
+
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# =========================================================
+# Xcode
+# =========================================================
+
+build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+**/.xcode.env.local
+
+# Xcode generated files
+*.xcscmblueprint
+*.xcuserdatad
+
+# =========================================================
+# iOS / CocoaPods
+# =========================================================
+
+**/Pods/
+
+# CocoaPods generated files
+*.xcworkspace/xcuserdata/
+
+# Keep Podfile.lock committed
+# ios/Podfile.lock SHOULD NOT be ignored
+
+# =========================================================
+# Android
+# =========================================================
+
+.gradle/
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+local.properties
+
+*.iml
+*.hprof
+*.apk
+*.aab
+
+# Android Studio
+.idea/
+
+# Keystores
+*.keystore
+*.jks
+!debug.keystore
+
+# =========================================================
+# React Native
+# =========================================================
+
+node_modules/
+package-lock.json
+ios/Podfile.lock
+
+# Metro
+.metro-health-check*
+.metro-cache/
+.cache/
+
+# React Native bundler artifacts
+*.jsbundle
+
+# =========================================================
+# JavaScript / Node
+# =========================================================
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+.npm/
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# =========================================================
+# TypeScript
+# =========================================================
+
+*.tsbuildinfo
+
+# =========================================================
+# Testing
+# =========================================================
+
+coverage/
+.nyc_output/
+
+# =========================================================
+# Fastlane
+# =========================================================
+
+**/fastlane/report.xml
+**/fastlane/Preview.html
+**/fastlane/screenshots
+**/fastlane/test_output
+
+# =========================================================
+# Ruby
+# =========================================================
+
+/vendor/bundle/
+
+# =========================================================
+# Logs
+# =========================================================
+
+*.log
+
+# =========================================================
+# Environment / Secrets
+# =========================================================
+
+.env
+.env.*
+!.env.example
+
+# =========================================================
+# Temporary files
+# =========================================================
+
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# =========================================================
+# OS / Editor
+# =========================================================
+
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# =========================================================
+# React Native / Expo leftovers
+# =========================================================
+
+.expo/
+.expo-shared/
+
+# =========================================================
+# Generated archives
+# =========================================================
+
+*.zip
+*.tar.gz
