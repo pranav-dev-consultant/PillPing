@@ -1,8 +1,9 @@
 import React from 'react';
-import { FlatList, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 
 import { HistoryItem } from '../components/HistoryItem';
 import { useHistory } from '../hooks/useHistory';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export function HistoryScreen() {
   const { items, loading, refresh } = useHistory();

@@ -6,13 +6,14 @@
     "android": "react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
-    "start": "react-native start",
+    "start": "react-native start --client-logs",
     "test": "jest",
     "clean": "watchman watch-del-all && rm -rf node_modules package-lock.json ios/Pods ios/build ios/Podfile.lock ios/.xcode.env.local android/.gradle android/build android/app/build ~/Library/Developer/Xcode/DerivedData $TMPDIR/metro-* $TMPDIR/haste-map-* && npm cache clean --force && npm install && cd ios && pod deintegrate && pod install --repo-update && cd .. && cd android && ./gradlew clean && cd ..",
     "reset": "react-native start --reset-cache"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "3.1.1",
+    "@react-native-community/datetimepicker": "9.2.1",
     "@react-navigation/bottom-tabs": "7.19.2",
     "@react-navigation/native": "7.4.1",
     "@react-navigation/native-stack": "7.19.2",

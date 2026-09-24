@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAccount } from '../hooks/useAccount';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export function AccountScreen() {
   const { account, loading, updateName } = useAccount();

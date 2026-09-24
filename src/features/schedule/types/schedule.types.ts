@@ -18,4 +18,14 @@ export type Schedule = {
   updatedAt: string;
 };
 
-export type CreateScheduleInput = Omit<Schedule, 'id' | 'createdAt' | 'updatedAt'>;
+export type CreateScheduleInput = {
+  title: string;
+  dose: number;
+  time: string; // Stored as HH:mm
+  startDate: string;
+  repeat: {
+    type: RepeatType;
+    customDays?: string[];
+  };
+  isActive: boolean;
+};

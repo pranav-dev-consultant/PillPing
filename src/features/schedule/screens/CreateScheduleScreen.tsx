@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { SafeAreaView, ScrollView, StyleSheet, Text } from 'react-native';
+import { ScrollView, StyleSheet, Text } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { RootStackParamList } from '../../../navigation/AppNavigator';
 import { ScheduleForm } from '../components/ScheduleForm';
 import { useSchedule } from '../hooks/useSchedule';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'CreateSchedule'>;
 

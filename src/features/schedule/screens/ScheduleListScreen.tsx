@@ -1,17 +1,24 @@
 import React, { useCallback } from 'react';
-import { Alert, FlatList, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-
+import { useFocusEffect } from '@react-navigation/native';
 import type { RootStackParamList } from '../../../navigation/AppNavigator';
 import { ScheduleCard } from '../components/ScheduleCard';
 import { useSchedule } from '../hooks/useSchedule';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export function ScheduleListScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { schedules, loading, refresh, removeSchedule } = useSchedule();
+
+  useFocusEffect(
+    useCallback(() => {
+      void refresh();
+    }, [refresh])
+  );
 
   const confirmDelete = useCallback((scheduleId: string) => {
     const schedule = schedules.find(item => item.id === scheduleId);
@@ -27,8 +34,7 @@ export function ScheduleListScreen() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.eyebrow}>PillPing</Text>
-          <Text style={styles.title}>Today’s Schedule</Text>
+          <Text style={styles.title}>Schedules</Text>
         </View>
         <Pressable onPress={() => navigation.navigate('CreateSchedule')} style={styles.addButton}>
           <Text style={styles.addButtonText}>+</Text>
