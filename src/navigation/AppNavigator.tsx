@@ -1,13 +1,14 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import type { NavigatorScreenParams } from '@react-navigation/native';
 
-import { BottomTabNavigator } from './BottomTabNavigator';
+import { BottomTabNavigator, type RootTabParamList } from './BottomTabNavigator';
 import { CreateScheduleScreen } from '../features/schedule/screens/CreateScheduleScreen';
 import type { Schedule } from '../features/schedule/types/schedule.types';
 import { useTheme } from '../theme/ThemeProvider';
 
 export type RootStackParamList = {
-  Tabs: undefined;
+  Tabs: NavigatorScreenParams<RootTabParamList> | undefined;
   CreateSchedule:
     | { mode: 'create'; schedule?: undefined }
     | { mode: 'edit'; schedule: Schedule }

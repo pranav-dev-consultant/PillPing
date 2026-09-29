@@ -13,7 +13,8 @@ export type Schedule = {
   id: string;
   title: string;
   dose: number;
-  time: string;
+  times: string[];
+  time?: string;
   startDate: string;
   repeat: RepeatRule;
   isActive: boolean;
@@ -24,7 +25,7 @@ export type Schedule = {
 export type CreateScheduleInput = {
   title: string;
   dose: number;
-  time: string; // Stored as HH:mm
+  times: string[]; // Stored as HH:mm
   startDate: string;
   repeat: {
     type: RepeatType;

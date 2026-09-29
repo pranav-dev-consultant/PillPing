@@ -6,9 +6,10 @@ import { ScheduleListScreen } from '../features/schedule/screens/ScheduleListScr
 import { HistoryScreen } from '../features/history/screens/HistoryScreen';
 import { AccountScreen } from '../features/account/screens/AccountScreen';
 import { useTheme } from '../theme/ThemeProvider';
+import type { ReminderOccurrenceTarget } from '../services/notifications/notificationService';
 
 export type RootTabParamList = {
-  Schedule: undefined;
+  Schedule: { notificationTarget?: ReminderOccurrenceTarget; focusKey?: number } | undefined;
   History: undefined;
   Account: undefined;
 };

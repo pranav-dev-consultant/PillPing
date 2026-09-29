@@ -4,20 +4,26 @@ import {
   cancelScheduleNotifications,
   reconcileScheduleNotifications,
 } from '../../../services/notifications/notificationService';
+import { normalizeSchedule, normalizeScheduleTimes } from '../utils/scheduleUtils';
 
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 export async function getSchedules(): Promise<Schedule[]> {
-  const schedules = await getStoredValue<Schedule[]>(STORAGE_KEYS.schedules, []);
-  return schedules.sort((a, b) => a.time.localeCompare(b.time));
+  const storedSchedules = await getStoredValue<Schedule[]>(STORAGE_KEYS.schedules, []);
+  const schedules = storedSchedules.map(normalizeSchedule);
+  if (storedSchedules.some(schedule => !Array.isArray(schedule.times) || schedule.time !== undefined)) {
+    await setStoredValue(STORAGE_KEYS.schedules, schedules);
+  }
+  return schedules.sort((a, b) => (a.times[0] ?? '').localeCompare(b.times[0] ?? ''));
 }
 
 export async function createSchedule(input: CreateScheduleInput): Promise<Schedule> {
   const now = new Date().toISOString();
   const schedule: Schedule = {
     ...input,
+    times: normalizeScheduleTimes(input),
     id: createId('schedule'),
     createdAt: now,
     updatedAt: now,
@@ -44,6 +50,7 @@ export async function updateSchedule(
   const updatedSchedule: Schedule = {
     ...existing,
     ...input,
+    times: normalizeScheduleTimes(input),
     id: existing.id,
     updatedAt: new Date().toISOString(),
   };

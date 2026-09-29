@@ -81,14 +81,18 @@ export function ScheduleForm({
   const [selectedDate, setSelectedDate] = useState(() =>
     initialSchedule ? parseStoredDate(initialSchedule.startDate) : new Date(),
   );
-  const [selectedTime, setSelectedTime] = useState(() => {
-    if (initialSchedule) return parseStoredTime(initialSchedule.time);
-    const value = new Date();
-    value.setHours(8, 0, 0, 0);
-    return value;
+  const [times, setTimes] = useState(() => {
+    const storedTimes = initialSchedule
+      ? initialSchedule.times?.length
+        ? initialSchedule.times
+        : initialSchedule.time
+          ? [initialSchedule.time]
+          : []
+      : [];
+    return (storedTimes.length ? storedTimes : [formatStoredTime(new Date())]).slice().sort();
   });
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [timePickerValue, setTimePickerValue] = useState<string | null>(null);
   const [repeat, setRepeat] =
     useState<CreateScheduleInput['repeat']['type']>(initialSchedule?.repeat.type ?? 'daily');
   const [customRepeatType, setCustomRepeatType] = useState<CustomRepeatType>(
@@ -104,19 +108,62 @@ export function ScheduleForm({
       title.trim().length > 0 &&
       Number.isInteger(Number(dose)) &&
       Number(dose) > 0 &&
+      times.length > 0 &&
+      new Set(times).size === times.length &&
       (repeat !== 'custom' ||
         customRepeatType === 'every_other_day' ||
         customDays.length > 0),
-    [customDays.length, customRepeatType, dose, repeat, title],
+    [customDays.length, customRepeatType, dose, repeat, times, title],
   );
 
-  const onTimeChange = (event: DateTimePickerEvent, value?: Date) => {
+  const onTimeChange = (currentTime: string, event: DateTimePickerEvent, value?: Date) => {
     if (Platform.OS === 'android') {
-      setShowTimePicker(false);
+      setTimePickerValue(null);
     }
 
     if (event.type === 'set' && value) {
-      setSelectedTime(value);
+      const nextTime = formatStoredTime(value);
+      if (times.some(time => time === nextTime && time !== currentTime)) {
+        setError('Each reminder time must be different.');
+        return;
+      }
+      setTimes(current => current.map(time => time === currentTime ? nextTime : time).sort());
+      if (Platform.OS === 'ios') setTimePickerValue(nextTime);
+      setError('');
+    }
+  };
+
+  const addTime = () => {
+    const occupied = new Set(times);
+    let nextTime = '';
+    for (let offset = 0; offset < 24; offset += 1) {
+      const hour = (8 + offset) % 24;
+      const candidate = `${pad(hour)}:00`;
+      if (!occupied.has(candidate)) {
+        nextTime = candidate;
+        break;
+      }
+    }
+    if (!nextTime) {
+      for (let minute = 0; minute < 1440; minute += 1) {
+        const candidate = `${pad(Math.floor(minute / 60))}:${pad(minute % 60)}`;
+        if (!occupied.has(candidate)) {
+          nextTime = candidate;
+          break;
+        }
+      }
+    }
+    if (nextTime) {
+      setTimes(current => [...current, nextTime].sort());
+      setError('');
+    }
+  };
+
+  const removeTime = (time: string) => {
+    if (times.length > 1) {
+      setTimes(current => current.filter(item => item !== time));
+      setTimePickerValue(null);
+      setError('');
     }
   };
 
@@ -159,12 +206,21 @@ export function ScheduleForm({
       return;
     }
 
+    if (times.length === 0) {
+      setError('Add at least one reminder time.');
+      return;
+    }
+    if (new Set(times).size !== times.length) {
+      setError('Each reminder time must be different.');
+      return;
+    }
+
     setError('');
 
     await onSubmit({
       title: title.trim(),
       dose: numericDose,
-      time: formatStoredTime(selectedTime),
+      times: [...times].sort(),
       startDate: formatStoredDate(selectedDate),
       repeat: {
         type: repeat,
@@ -207,22 +263,37 @@ export function ScheduleForm({
       />
 
       <Text style={[styles.label, { color: palette.label }]}>Time</Text>
-      <Pressable
-        accessibilityRole="button"
-        onPress={() => setShowTimePicker(!showTimePicker)}
-        style={[styles.input, { borderColor: palette.fieldBorder, backgroundColor: palette.surface }]}
-      >
-        <Text style={[styles.timeText, { color: palette.text }]}>{formatDisplayTime(selectedTime)}</Text>
+      {times.map(time => (
+        <View key={time} style={styles.timeRow}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Edit reminder time ${formatDisplayTime(parseStoredTime(time))}`}
+            onPress={() => setTimePickerValue(timePickerValue === time ? null : time)}
+            style={[styles.timeInput, { borderColor: palette.fieldBorder, backgroundColor: palette.surface }]}
+          >
+            <Text style={[styles.timeText, { color: palette.text }]}>{formatDisplayTime(parseStoredTime(time))}</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" onPress={() => setTimePickerValue(time)} style={styles.timeAction}>
+            <Text style={[styles.timeActionText, { color: palette.primary }]}>Edit</Text>
+          </Pressable>
+          {times.length > 1 && (
+            <Pressable accessibilityRole="button" accessibilityLabel="Remove time" onPress={() => removeTime(time)} style={styles.timeAction}>
+              <Text style={[styles.timeActionText, { color: palette.danger }]}>Remove</Text>
+            </Pressable>
+          )}
+          {timePickerValue === time && (
+            <DateTimePicker
+              value={parseStoredTime(time)}
+              mode="time"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              onChange={(event, value) => onTimeChange(time, event, value)}
+            />
+          )}
+        </View>
+      ))}
+      <Pressable accessibilityRole="button" onPress={addTime} style={styles.addTimeButton}>
+        <Text style={[styles.addTimeText, { color: palette.primary }]}>+ Add another time</Text>
       </Pressable>
-
-      {showTimePicker && (
-        <DateTimePicker
-          value={selectedTime}
-          mode="time"
-          display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-          onChange={onTimeChange}
-        />
-      )}
 
       <Text style={[styles.label, { color: palette.label }]}>Start date</Text>
       <Pressable
@@ -328,7 +399,6 @@ export function ScheduleForm({
           customRepeatType: repeat === 'custom' ? customRepeatType : undefined,
           customDays: repeat === 'custom' ? customDays : undefined,
           startDate: formatStoredDate(selectedDate),
-          time: formatStoredTime(selectedTime),
         })}
       </Text>
 
@@ -379,6 +449,35 @@ const styles = StyleSheet.create({
   timeText: {
     fontSize: 16,
     color: '#111827',
+  },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8,
+  },
+  timeInput: {
+    flex: 1,
+    minWidth: 120,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  timeAction: {
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+  },
+  timeActionText: {
+    fontWeight: '600',
+  },
+  addTimeButton: {
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+  },
+  addTimeText: {
+    fontWeight: '600',
   },
   helperText: {
     marginTop: 8,

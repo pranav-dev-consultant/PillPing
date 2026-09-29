@@ -1,6 +1,6 @@
 import type { CreateScheduleInput, CustomRepeatType, Schedule } from '../types/schedule.types';
 
-type RepeatSummaryInput = Pick<CreateScheduleInput, 'startDate' | 'time'> & {
+type RepeatSummaryInput = Pick<CreateScheduleInput, 'startDate'> & {
   repeat: CreateScheduleInput['repeat']['type'];
   customRepeatType?: CustomRepeatType;
   customDays?: string[];
@@ -58,6 +58,29 @@ const JS_DAY_NAMES = [
   'Saturday',
 ];
 
+const WEEKDAY_INDEX: Record<string, number> = {
+  Sun: 0,
+  Sunday: 0,
+  Mon: 1,
+  Monday: 1,
+  Tue: 2,
+  Tuesday: 2,
+  Wed: 3,
+  Wednesday: 3,
+  Thu: 4,
+  Thursday: 4,
+  Fri: 5,
+  Friday: 5,
+  Sat: 6,
+  Saturday: 6,
+};
+
+export type ScheduleOccurrence = {
+  occurrenceId: string;
+  scheduledAt: Date;
+  time: string;
+};
+
 export function formatScheduleTime(time: string): string {
   const [hourString, minuteString] = time.split(':');
   const hour = Number(hourString);
@@ -66,27 +89,61 @@ export function formatScheduleTime(time: string): string {
   return `${displayHour}:${minuteString} ${suffix}`;
 }
 
-function formatSummaryTime(time: string): string {
-  if (!time) return '';
+export function normalizeScheduleTimes(schedule: { times?: string[]; time?: string }): string[] {
+  const candidates = schedule.times?.length ? schedule.times : schedule.time ? [schedule.time] : [];
+  return Array.from(new Set(candidates.filter(time => /^([01]\d|2[0-3]):[0-5]\d$/.test(time)))).sort();
+}
 
-  const [hourString, minuteString] = time.split(':');
-  const hour = Number(hourString);
-  const minute = Number(minuteString);
+export function normalizeSchedule(schedule: Schedule): Schedule {
+  const currentSchedule = { ...schedule };
+  delete currentSchedule.time;
+  return { ...currentSchedule, times: normalizeScheduleTimes(schedule) };
+}
 
+export function getScheduleOccurrencesOnDate(
+  schedule: Schedule,
+  date: Date,
+): ScheduleOccurrence[] {
+  if (!schedule.isActive) return [];
+
+  const [startYear, startMonth, startDay] = schedule.startDate.split('-').map(Number);
+  const startDate = new Date(startYear, startMonth - 1, startDay);
+  const candidateDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   if (
-    !Number.isInteger(hour) ||
-    !Number.isInteger(minute) ||
-    hour < 0 ||
-    hour > 23 ||
-    minute < 0 ||
-    minute > 59
+    Number.isNaN(startDate.getTime()) ||
+    startDate.getFullYear() !== startYear ||
+    startDate.getMonth() !== startMonth - 1 ||
+    startDate.getDate() !== startDay ||
+    candidateDate < startDate
   ) {
-    return '';
+    return [];
   }
 
-  const suffix = hour >= 12 ? 'PM' : 'AM';
-  const displayHour = hour % 12 || 12;
-  return `${displayHour}:${String(minute).padStart(2, '0')} ${suffix}`;
+  const candidateKey = `${candidateDate.getFullYear()}-${String(candidateDate.getMonth() + 1).padStart(2, '0')}-${String(candidateDate.getDate()).padStart(2, '0')}`;
+  const startKey = `${startYear}-${String(startMonth).padStart(2, '0')}-${String(startDay).padStart(2, '0')}`;
+  const repeat = schedule.repeat;
+  const matchesDate = repeat.type === 'once'
+    ? candidateKey === startKey
+    : repeat.type === 'daily'
+      ? true
+      : repeat.type === 'weekly'
+        ? candidateDate.getDay() === startDate.getDay()
+        : repeat.customRepeatType === 'every_other_day'
+          ? isEveryOtherDayOccurrence(startKey, candidateKey)
+          : (repeat.customDays ?? []).some(day => WEEKDAY_INDEX[day] === candidateDate.getDay());
+
+  if (!matchesDate) return [];
+
+  return normalizeScheduleTimes(schedule).map(time => {
+    const [hour, minute] = time.split(':').map(Number);
+    const scheduledAt = new Date(candidateDate);
+    scheduledAt.setHours(hour, minute, 0, 0);
+    return {
+      occurrenceId: `${schedule.id}:${candidateKey}:${time}`,
+      scheduledAt,
+      time,
+    };
+  });
 }
 
 function formatSummaryDate(dateKey: string): string {
@@ -148,16 +205,12 @@ function formatDayPattern(days: string[], timeSuffix: string): string {
 }
 
 export function getRepeatSummary(input: RepeatSummaryInput): string {
-  const time = formatSummaryTime(input.time);
-  const timeSuffix = time ? ` at ${time}` : '';
-
   if (input.repeat === 'once') {
     const date = formatSummaryDate(input.startDate);
-    if (!date && !time) return 'Select a date';
-    return `Once${date ? ` on ${date}` : ''}${timeSuffix}`;
+    return date ? `Once on ${date}` : 'Select a date';
   }
 
-  if (input.repeat === 'daily') return `Every day${timeSuffix}`;
+  if (input.repeat === 'daily') return 'Every day';
 
   if (input.repeat === 'weekly') {
     const [year, month, day] = input.startDate.split('-').map(Number);
@@ -165,30 +218,23 @@ export function getRepeatSummary(input: RepeatSummaryInput): string {
     const weekday = year && month && day && !Number.isNaN(date.getTime())
       ? JS_DAY_NAMES[date.getDay()]
       : '';
-    return `Every${weekday ? ` ${weekday}` : ' week'}${timeSuffix}`;
+    return `Every${weekday ? ` ${weekday}` : ' week'}`;
   }
 
   if (input.customRepeatType === 'every_other_day') {
-    return `Every other day${timeSuffix}`;
+    return 'Every other day';
   }
 
-  return formatDayPattern(input.customDays ?? [], timeSuffix) ||
-    (time ? `Select at least one day${timeSuffix}` : 'Select at least one day');
+  return formatDayPattern(input.customDays ?? [], '') || 'Select at least one day';
 }
 
 export function formatRepeat(schedule: Schedule): string {
-  if (schedule.repeat.type === 'once') return `Once · ${schedule.startDate}`;
-  if (schedule.repeat.type === 'daily') return 'Every day';
-  if (
-    schedule.repeat.type === 'custom' &&
-    schedule.repeat.customRepeatType === 'every_other_day'
-  ) {
-    return 'Every other day';
-  }
-  if (schedule.repeat.type === 'custom') {
-    return `Specific days · ${schedule.repeat.customDays?.join(', ') ?? ''}`;
-  }
-  return 'Every week';
+  return getRepeatSummary({
+    repeat: schedule.repeat.type,
+    startDate: schedule.startDate,
+    customRepeatType: schedule.repeat.customRepeatType,
+    customDays: schedule.repeat.customDays,
+  });
 }
 
 function parseDateKey(dateKey: string): Date {

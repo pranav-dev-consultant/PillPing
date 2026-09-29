@@ -13,7 +13,7 @@ import { Platform } from 'react-native';
 
 import { upsertHistoryItemForOccurrence } from '../../features/history/services/historyService';
 import type { Schedule } from '../../features/schedule/types/schedule.types';
-import { isEveryOtherDayOccurrence, formatScheduleTime } from '../../features/schedule/utils/scheduleUtils';
+import { formatScheduleTime, getScheduleOccurrencesOnDate, normalizeSchedule, normalizeScheduleTimes } from '../../features/schedule/utils/scheduleUtils';
 import { STORAGE_KEYS, getStoredValue, setStoredValue } from '../storage/storageService';
 
 const CHANNEL_ID = 'medicine-reminders';
@@ -39,28 +39,25 @@ function getChannelId(sound: ReminderSound): string {
   return `${CHANNEL_ID}-${sound}`;
 }
 
-const WEEKDAY_INDEX: Record<string, number> = {
-  Sun: 0,
-  Sunday: 0,
-  Mon: 1,
-  Monday: 1,
-  Tue: 2,
-  Tuesday: 2,
-  Wed: 3,
-  Wednesday: 3,
-  Thu: 4,
-  Thursday: 4,
-  Fri: 5,
-  Friday: 5,
-  Sat: 6,
-  Saturday: 6,
-};
-
 type DoseOccurrence = {
   schedule: Schedule;
   dateKey: string;
   scheduledAt: Date;
   occurrenceId: string;
+};
+
+export type ReminderOccurrenceTarget = {
+  scheduleId: string;
+  occurrenceId: string;
+  scheduledAt: string;
+};
+
+export type ReminderOccurrenceAction = 'taken' | 'snoozed' | 'skipped';
+
+export type ReminderOccurrenceActionInput = ReminderOccurrenceTarget & {
+  scheduleTitle: string;
+  dose: string;
+  time: string;
 };
 
 function getString(data: Notification['data'], key: string): string | undefined {
@@ -96,40 +93,12 @@ function parseDateKey(value: string): Date | undefined {
   return parsed;
 }
 
-function getScheduleTime(schedule: Schedule): { hour: number; minute: number } | undefined {
-  const match = /^(\d{2}):(\d{2})$/.exec(schedule.time);
-  if (!match) return undefined;
-
-  const hour = Number(match[1]);
-  const minute = Number(match[2]);
-  if (hour > 23 || minute > 59) return undefined;
-  return { hour, minute };
-}
-
-function matchesScheduleDate(schedule: Schedule, candidate: Date, startDate: Date): boolean {
-  const repeat = schedule.repeat;
-
-  if (repeat.type === 'once') {
-    return dateKey(candidate) === dateKey(startDate);
-  }
-
-  if (repeat.type === 'daily') return true;
-  if (repeat.type === 'weekly') return candidate.getDay() === startDate.getDay();
-
-  if (repeat.customRepeatType === 'every_other_day') {
-    return isEveryOtherDayOccurrence(schedule.startDate, dateKey(candidate));
-  }
-
-  const selectedDays = repeat.customDays ?? [];
-  return selectedDays.some(day => WEEKDAY_INDEX[day] === candidate.getDay());
-}
-
 function getOccurrences(schedule: Schedule, now: Date): DoseOccurrence[] {
   if (!schedule.isActive) return [];
 
   const startDate = parseDateKey(schedule.startDate);
-  const time = getScheduleTime(schedule);
-  if (!startDate || !time) return [];
+  const times = normalizeScheduleTimes(schedule);
+  if (!startDate || times.length === 0) return [];
 
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const candidateDate = startDate > today ? new Date(startDate) : today;
@@ -140,20 +109,17 @@ function getOccurrences(schedule: Schedule, now: Date): DoseOccurrence[] {
     dayOffset < SEARCH_DAYS && occurrences.length < MAX_OCCURRENCES_PER_SCHEDULE;
     dayOffset += 1
   ) {
-    const scheduledAt = new Date(candidateDate);
-    scheduledAt.setHours(time.hour, time.minute, 0, 0);
-
-    if (
-      scheduledAt.getTime() > now.getTime() &&
-      matchesScheduleDate(schedule, candidateDate, startDate)
-    ) {
-      const occurrenceDate = dateKey(candidateDate);
-      occurrences.push({
-        schedule,
-        dateKey: occurrenceDate,
-        scheduledAt,
-        occurrenceId: `${schedule.id}:${occurrenceDate}`,
-      });
+    const occurrenceDate = dateKey(candidateDate);
+    for (const occurrence of getScheduleOccurrencesOnDate(schedule, candidateDate)) {
+      if (occurrence.scheduledAt.getTime() > now.getTime()) {
+        occurrences.push({
+          schedule,
+          dateKey: occurrenceDate,
+          scheduledAt: occurrence.scheduledAt,
+          occurrenceId: occurrence.occurrenceId,
+        });
+        if (occurrences.length >= MAX_OCCURRENCES_PER_SCHEDULE) break;
+      }
     }
 
     if (schedule.repeat.type === 'once') break;
@@ -163,8 +129,8 @@ function getOccurrences(schedule: Schedule, now: Date): DoseOccurrence[] {
   return occurrences;
 }
 
-function scheduleNotificationId(scheduleId: string, date: string): string {
-  return `pillping-dose-${encodeURIComponent(scheduleId)}-${date}`;
+function scheduleNotificationId(scheduleId: string, date: string, time: string): string {
+  return `pillping-dose-${encodeURIComponent(scheduleId)}-${date}-${time.replace(':', '')}`;
 }
 
 function snoozeNotificationId(occurrenceId: string): string {
@@ -185,12 +151,13 @@ function buildNotification(
   schedule: Schedule,
   occurrenceId: string,
   scheduledAt: Date,
+  time: string,
   notificationId: string,
   managedBy: string,
   sound: ReminderSound,
 ): Notification {
   const doseText = `${schedule.dose} ${schedule.dose === 1 ? 'dose' : 'doses'}`;
-  const timeText = formatScheduleTime(schedule.time);
+  const timeText = formatScheduleTime(time);
 
   return {
     id: notificationId,
@@ -203,7 +170,7 @@ function buildNotification(
       scheduledAt: scheduledAt.toISOString(),
       scheduleTitle: schedule.title,
       dose: String(schedule.dose),
-      time: schedule.time,
+      time,
     },
     android: {
       channelId: getChannelId(sound),
@@ -338,6 +305,22 @@ async function clearScheduleNotifications(scheduleId: string): Promise<void> {
   await Promise.all(Array.from(ids, id => notifee.cancelNotification(id)));
 }
 
+async function cancelOccurrenceNotifications(
+  notificationId: string | undefined,
+  occurrenceId: string | undefined,
+): Promise<void> {
+  const ids = new Set<string>();
+  if (notificationId) ids.add(notificationId);
+  if (occurrenceId) ids.add(snoozeNotificationId(occurrenceId));
+
+  await Promise.all(Array.from(ids, async id => {
+    await Promise.all([
+      notifee.cancelNotification(id),
+      notifee.cancelTriggerNotification(id),
+    ]);
+  }));
+}
+
 export async function reconcileScheduleNotifications(
   options: { requestPermission?: boolean } = {},
 ): Promise<void> {
@@ -358,7 +341,11 @@ export async function reconcileScheduleNotifications(
       Platform.OS === 'android' &&
       settings.android.alarm === AndroidNotificationSetting.ENABLED;
 
-    const schedules = await getStoredValue<Schedule[]>(STORAGE_KEYS.schedules, []);
+    const storedSchedules = await getStoredValue<Schedule[]>(STORAGE_KEYS.schedules, []);
+    const schedules = storedSchedules.map(normalizeSchedule);
+    if (storedSchedules.some(schedule => !Array.isArray(schedule.times) || schedule.time !== undefined)) {
+      await setStoredValue(STORAGE_KEYS.schedules, schedules);
+    }
     const now = new Date();
     const occurrences = schedules
       .flatMap(schedule => getOccurrences(schedule, now))
@@ -374,7 +361,12 @@ export async function reconcileScheduleNotifications(
             occurrence.schedule,
             occurrence.occurrenceId,
             occurrence.scheduledAt,
-            scheduleNotificationId(occurrence.schedule.id, occurrence.dateKey),
+            occurrence.scheduledAt.toTimeString().slice(0, 5),
+            scheduleNotificationId(
+              occurrence.schedule.id,
+              occurrence.dateKey,
+              occurrence.scheduledAt.toTimeString().slice(0, 5),
+            ),
             MANAGED_SCHEDULE,
             reminderSound,
           ),
@@ -459,6 +451,16 @@ async function recordNotificationAction(
   });
 }
 
+function getOccurrenceTarget(notification: Notification): ReminderOccurrenceTarget | undefined {
+  const scheduleId = getString(notification.data, 'scheduleId');
+  const occurrenceId = getString(notification.data, 'occurrenceId');
+  const scheduledAt = getString(notification.data, 'scheduledAt');
+  if (!scheduleId || !occurrenceId || !scheduledAt || Number.isNaN(Date.parse(scheduledAt))) {
+    return undefined;
+  }
+  return { scheduleId, occurrenceId, scheduledAt };
+}
+
 async function snoozeNotification(notification: Notification): Promise<void> {
   const data = notification.data;
   const scheduleId = getString(data, 'scheduleId');
@@ -488,7 +490,7 @@ async function snoozeNotification(notification: Notification): Promise<void> {
   }
 
   await recordNotificationAction(notification, 'snoozed');
-  if (notification.id) await notifee.cancelNotification(notification.id);
+  await cancelOccurrenceNotifications(notification.id, undefined);
 
   const preferences = await getStoredValue<NotificationPreferences | null>(
     STORAGE_KEYS.account,
@@ -533,6 +535,52 @@ async function snoozeNotification(notification: Notification): Promise<void> {
   );
 }
 
+async function performNotificationAction(
+  notification: Notification,
+  action: ReminderOccurrenceAction,
+): Promise<void> {
+  if (action === 'snoozed') {
+    await snoozeNotification(notification);
+    return;
+  }
+
+  await recordNotificationAction(notification, action);
+  await cancelOccurrenceNotifications(
+    notification.id,
+    getString(notification.data, 'occurrenceId'),
+  );
+}
+
+export async function performScheduleOccurrenceAction(
+  input: ReminderOccurrenceActionInput,
+  action: ReminderOccurrenceAction,
+): Promise<void> {
+  const scheduledAt = new Date(input.scheduledAt);
+  if (
+    !input.scheduleId ||
+    !input.occurrenceId ||
+    Number.isNaN(scheduledAt.getTime()) ||
+    !/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)
+  ) {
+    return;
+  }
+
+  const notification: Notification = {
+    id: scheduleNotificationId(input.scheduleId, dateKey(scheduledAt), input.time),
+    title: input.scheduleTitle,
+    data: {
+      managedBy: MANAGED_SCHEDULE,
+      scheduleId: input.scheduleId,
+      occurrenceId: input.occurrenceId,
+      scheduledAt: input.scheduledAt,
+      scheduleTitle: input.scheduleTitle,
+      dose: input.dose,
+      time: input.time,
+    },
+  };
+  await performNotificationAction(notification, action);
+}
+
 export async function handleNotificationEvent(event: Event): Promise<boolean> {
   try {
     const notification = event.detail.notification;
@@ -554,17 +602,11 @@ export async function handleNotificationEvent(event: Event): Promise<boolean> {
 
     const actionId = event.detail.pressAction?.id;
     if (actionId === ACTION_TAKEN) {
-      await recordNotificationAction(notification, 'taken');
-      if (notification.id) await notifee.cancelNotification(notification.id);
-      const occurrenceId = getString(notification.data, 'occurrenceId');
-      if (occurrenceId) await notifee.cancelNotification(snoozeNotificationId(occurrenceId));
+      await performNotificationAction(notification, 'taken');
     } else if (actionId === ACTION_SKIPPED) {
-      await recordNotificationAction(notification, 'skipped');
-      if (notification.id) await notifee.cancelNotification(notification.id);
-      const occurrenceId = getString(notification.data, 'occurrenceId');
-      if (occurrenceId) await notifee.cancelNotification(snoozeNotificationId(occurrenceId));
+      await performNotificationAction(notification, 'skipped');
     } else if (actionId === ACTION_SNOOZE) {
-      await snoozeNotification(notification);
+      await performNotificationAction(notification, 'snoozed');
     }
 
     return false;
@@ -574,18 +616,25 @@ export async function handleNotificationEvent(event: Event): Promise<boolean> {
   }
 }
 
-export function subscribeToNotificationEvents(onOpenSchedule: () => void): () => void {
+export function subscribeToNotificationEvents(
+  onOpenOccurrence: (target: ReminderOccurrenceTarget) => void,
+): () => void {
   return notifee.onForegroundEvent(event => {
     void handleNotificationEvent(event).then(shouldOpen => {
-      if (shouldOpen) onOpenSchedule();
+      const target = event.detail.notification
+        ? getOccurrenceTarget(event.detail.notification)
+        : undefined;
+      if (target && (shouldOpen || event.type === EventType.ACTION_PRESS)) {
+        onOpenOccurrence(target);
+      }
     });
   });
 }
 
-export async function getInitialNotificationScheduleId(): Promise<string | undefined> {
+export async function getInitialNotificationTarget(): Promise<ReminderOccurrenceTarget | undefined> {
   try {
     const initial = await notifee.getInitialNotification();
-    return getString(initial?.notification.data, 'scheduleId');
+    return initial ? getOccurrenceTarget(initial.notification) : undefined;
   } catch (error) {
     console.warn('[Notifications] Could not read launch notification', error);
     return undefined;

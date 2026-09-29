@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { AppState, StatusBar, StyleSheet, View } from 'react-native';
 import {
   DarkTheme,
@@ -12,22 +12,33 @@ import type { RootStackParamList } from './navigation/AppNavigator';
 import { AccountProvider, useAccount } from './features/account/hooks/useAccount';
 import { ThemeProvider, useTheme } from './theme/ThemeProvider';
 import {
-  getInitialNotificationScheduleId,
+  getInitialNotificationTarget,
   initializeNotificationService,
   reconcileScheduleNotifications,
   subscribeToNotificationEvents,
+  type ReminderOccurrenceTarget,
 } from './services/notifications/notificationService';
 
 function AppNavigation(): React.JSX.Element {
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const { loading } = useAccount();
   const { palette, isDark } = useTheme();
+  const pendingNotificationTarget = useRef<ReminderOccurrenceTarget | null>(null);
+
+  const openOccurrence = useCallback((target: ReminderOccurrenceTarget) => {
+    if (!navigationRef.isReady()) {
+      pendingNotificationTarget.current = target;
+      return;
+    }
+    navigationRef.navigate('Tabs', {
+      screen: 'Schedule',
+      params: { notificationTarget: target, focusKey: Date.now() },
+    });
+  }, [navigationRef]);
 
   useEffect(() => {
     if (!loading) void initializeNotificationService();
-    const unsubscribe = subscribeToNotificationEvents(() => {
-      if (navigationRef.isReady()) navigationRef.navigate('Tabs');
-    });
+    const unsubscribe = subscribeToNotificationEvents(openOccurrence);
     const appStateSubscription = AppState.addEventListener('change', state => {
       if (state === 'active') void reconcileScheduleNotifications();
     });
@@ -36,11 +47,22 @@ function AppNavigation(): React.JSX.Element {
       unsubscribe();
       appStateSubscription.remove();
     };
-  }, [loading, navigationRef]);
+  }, [loading, navigationRef, openOccurrence]);
 
   const handleReady = () => {
-    void getInitialNotificationScheduleId().then(scheduleId => {
-      if (scheduleId && navigationRef.isReady()) navigationRef.navigate('Tabs');
+    const pendingTarget = pendingNotificationTarget.current;
+    if (pendingTarget) {
+      pendingNotificationTarget.current = null;
+      openOccurrence(pendingTarget);
+    }
+    void getInitialNotificationTarget().then(target => {
+      if (
+        target &&
+        (target.scheduleId !== pendingTarget?.scheduleId ||
+          target.occurrenceId !== pendingTarget?.occurrenceId)
+      ) {
+        openOccurrence(target);
+      }
     });
   };
 
