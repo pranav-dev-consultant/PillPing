@@ -4,6 +4,8 @@ const STORAGE_KEYS = {
   schedules: '@pillping/schedules',
   history: '@pillping/history',
   account: '@pillping/account',
+  notificationPermissionAsked: '@pillping/notificationPermissionAsked',
+  historyClearedAt: '@pillping/historyClearedAt',
 } as const;
 
 export async function getStoredValue<T>(key: string, fallback: T): Promise<T> {
@@ -27,6 +29,10 @@ export async function setStoredValue<T>(key: string, value: T): Promise<void> {
 
 export async function removeStoredValue(key: string): Promise<void> {
   await AsyncStorage.removeItem(key);
+}
+
+export async function clearStoredValues(keys: string[]): Promise<void> {
+  await Promise.all(keys.map(key => AsyncStorage.removeItem(key)));
 }
 
 export { STORAGE_KEYS };

@@ -3,19 +3,31 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { BottomTabNavigator } from './BottomTabNavigator';
 import { CreateScheduleScreen } from '../features/schedule/screens/CreateScheduleScreen';
+import type { Schedule } from '../features/schedule/types/schedule.types';
+import { useTheme } from '../theme/ThemeProvider';
 
 export type RootStackParamList = {
   Tabs: undefined;
-  CreateSchedule: undefined;
+  CreateSchedule:
+    | { mode: 'create'; schedule?: undefined }
+    | { mode: 'edit'; schedule: Schedule }
+    | undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function AppNavigator() {
+  const { palette } = useTheme();
+
   return (
-    <Stack.Navigator>
+    <Stack.Navigator screenOptions={{
+      headerStyle: { backgroundColor: palette.surface },
+      headerTintColor: palette.text,
+      headerTitleStyle: { color: palette.text },
+      contentStyle: { backgroundColor: palette.background },
+    }}>
       <Stack.Screen name="Tabs" component={BottomTabNavigator} options={{ headerShown: false }} />
-      <Stack.Screen name="CreateSchedule" component={CreateScheduleScreen} options={{ title: 'Create Schedule', presentation: 'card' }} />
+      <Stack.Screen name="CreateSchedule" component={CreateScheduleScreen} options={{ presentation: 'card' }} />
     </Stack.Navigator>
   );
 }

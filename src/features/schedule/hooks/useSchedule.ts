@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import type { CreateScheduleInput, Schedule } from '../types/schedule.types';
-import { createSchedule, deleteSchedule, getSchedules } from '../services/scheduleService';
+import {
+  createSchedule,
+  deleteSchedule,
+  getSchedules,
+  updateSchedule,
+} from '../services/scheduleService';
 
 export function useSchedule() {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -25,10 +30,15 @@ export function useSchedule() {
     await refresh();
   }, [refresh]);
 
+  const editSchedule = useCallback(async (scheduleId: string, input: CreateScheduleInput) => {
+    await updateSchedule(scheduleId, input);
+    await refresh();
+  }, [refresh]);
+
   const removeSchedule = useCallback(async (schedule: Schedule) => {
     await deleteSchedule(schedule);
     await refresh();
   }, [refresh]);
 
-  return { schedules, loading, refresh, addSchedule, removeSchedule };
+  return { schedules, loading, refresh, addSchedule, editSchedule, removeSchedule };
 }

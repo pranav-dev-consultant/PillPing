@@ -1,6 +1,9 @@
 import type { CreateScheduleInput, Schedule } from '../types/schedule.types';
 import { STORAGE_KEYS, getStoredValue, setStoredValue } from '../../../services/storage/storageService';
-// import { cancelScheduledNotification, scheduleLocalNotification } from '../../../services/notifications/notificationService';
+import {
+  cancelScheduleNotifications,
+  reconcileScheduleNotifications,
+} from '../../../services/notifications/notificationService';
 
 function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -22,21 +25,45 @@ export async function createSchedule(input: CreateScheduleInput): Promise<Schedu
 
   const schedules = await getSchedules();
   await setStoredValue(STORAGE_KEYS.schedules, [...schedules, schedule]);
-
-  // await scheduleLocalNotification({
-  //   notificationId: `schedule-${schedule.id}`,
-  //   scheduleId: schedule.id,
-  //   title: schedule.title,
-  //   time: schedule.time,
-  //   repeatType: schedule.repeat.type,
-  // });
+  await reconcileScheduleNotifications({ requestPermission: true });
 
   return schedule;
+}
+
+export async function updateSchedule(
+  scheduleId: string,
+  input: CreateScheduleInput,
+): Promise<Schedule> {
+  const schedules = await getSchedules();
+  const existing = schedules.find(schedule => schedule.id === scheduleId);
+
+  if (!existing) {
+    throw new Error('Schedule not found');
+  }
+
+  const updatedSchedule: Schedule = {
+    ...existing,
+    ...input,
+    id: existing.id,
+    updatedAt: new Date().toISOString(),
+  };
+
+  await setStoredValue(
+    STORAGE_KEYS.schedules,
+    schedules.map(schedule =>
+      schedule.id === scheduleId ? updatedSchedule : schedule,
+    ),
+  );
+  await cancelScheduleNotifications(scheduleId);
+  await reconcileScheduleNotifications({ requestPermission: true });
+
+  return updatedSchedule;
 }
 
 export async function deleteSchedule(schedule: Schedule): Promise<void> {
   const schedules = await getSchedules();
   const next = schedules.filter(item => item.id !== schedule.id);
   await setStoredValue(STORAGE_KEYS.schedules, next);
-  // await cancelScheduledNotification(`schedule-${schedule.id}`);
+  await cancelScheduleNotifications(schedule.id);
+  await reconcileScheduleNotifications();
 }

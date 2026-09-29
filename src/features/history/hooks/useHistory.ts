@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { getHistory } from '../services/historyService';
+import { clearHistory as clearStoredHistory, getHistory } from '../services/historyService';
 import type { HistoryItem } from '../types/history.types';
 
 export function useHistory() {
@@ -16,9 +16,14 @@ export function useHistory() {
     }
   }, []);
 
+  const clearHistory = useCallback(async () => {
+    await clearStoredHistory();
+    setItems([]);
+  }, []);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  return { items, loading, refresh };
+  return { items, loading, refresh, clearHistory };
 }
