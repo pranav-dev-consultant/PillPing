@@ -11,6 +11,7 @@ import { useSchedule } from '../hooks/useSchedule';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../../../theme/ThemeProvider';
 import type { HistoryItem } from '../../history/types/history.types';
+import type { ActionStatus } from '../../../types/common.types';
 import { getHistory } from '../../history/services/historyService';
 import type { Schedule } from '../types/schedule.types';
 import { getScheduleOccurrencesOnDate } from '../utils/scheduleUtils';
@@ -30,12 +31,11 @@ function formatStoredTime(date: Date): string {
 function getCardOccurrences(
   schedule: Schedule,
   now: Date,
-  history: HistoryItem[],
+  historyById: Map<string, ActionStatus>,
   notificationTarget?: ReminderOccurrenceTarget,
 ): ScheduleCardOccurrence[] {
   if (!schedule.isActive) return [];
 
-  const historyById = new Map(history.map(item => [item.id, item.status]));
   const occurrences: ScheduleCardOccurrence[] = getScheduleOccurrencesOnDate(schedule, now).map(occurrence => ({
     ...occurrence,
     status: historyById.get(`occurrence-${encodeURIComponent(occurrence.occurrenceId)}`),
@@ -77,6 +77,7 @@ export function ScheduleListScreen() {
   const listRef = useRef<FlatList<Schedule>>(null);
   const notificationTarget = route.params?.notificationTarget;
   const focusKey = route.params?.focusKey;
+  const historyById = new Map(history.map(item => [item.id, item.status]));
 
   const refreshHistory = useCallback(async () => {
     setHistory(await getHistory());
@@ -169,7 +170,7 @@ export function ScheduleListScreen() {
         renderItem={({ item }) => (
           <ScheduleCard
             schedule={item}
-            occurrences={getCardOccurrences(item, now, history, notificationTarget)}
+            occurrences={getCardOccurrences(item, now, historyById, notificationTarget)}
             now={now}
             focusedOccurrenceId={notificationTarget?.scheduleId === item.id ? notificationTarget.occurrenceId : undefined}
             onPress={() => navigation.navigate('CreateSchedule', { mode: 'edit', schedule: item })}

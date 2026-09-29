@@ -15,6 +15,7 @@ import { upsertHistoryItemForOccurrence } from '../../features/history/services/
 import type { Schedule } from '../../features/schedule/types/schedule.types';
 import { formatScheduleTime, getScheduleOccurrencesOnDate, normalizeSchedule, normalizeScheduleTimes } from '../../features/schedule/utils/scheduleUtils';
 import { STORAGE_KEYS, getStoredValue, setStoredValue } from '../storage/storageService';
+import { isValidTime } from '../../utils/validation';
 
 const CHANNEL_ID = 'medicine-reminders';
 const IOS_CATEGORY_ID = 'medicine-reminder-actions';
@@ -174,7 +175,7 @@ function buildNotification(
     },
     android: {
       channelId: getChannelId(sound),
-      pressAction: { id: ACTION_OPEN },
+      pressAction: { id: ACTION_OPEN, launchActivity: 'default' },
       actions: [
         { title: 'Taken', pressAction: { id: ACTION_TAKEN } },
         { title: 'Snooze', pressAction: { id: ACTION_SNOOZE } },
@@ -511,7 +512,7 @@ async function snoozeNotification(notification: Notification): Promise<void> {
     },
     android: {
       channelId: getChannelId(reminderSound),
-      pressAction: { id: ACTION_OPEN },
+      pressAction: { id: ACTION_OPEN, launchActivity: 'default' },
       actions: [
         { title: 'Taken', pressAction: { id: ACTION_TAKEN } },
         { title: 'Snooze', pressAction: { id: ACTION_SNOOZE } },
@@ -560,7 +561,7 @@ export async function performScheduleOccurrenceAction(
     !input.scheduleId ||
     !input.occurrenceId ||
     Number.isNaN(scheduledAt.getTime()) ||
-    !/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time)
+    !isValidTime(input.time)
   ) {
     return;
   }

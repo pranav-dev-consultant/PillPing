@@ -1,4 +1,5 @@
 import type { CreateScheduleInput, CustomRepeatType, Schedule } from '../types/schedule.types';
+import { isValidTime } from '../../../utils/validation';
 
 type RepeatSummaryInput = Pick<CreateScheduleInput, 'startDate'> & {
   repeat: CreateScheduleInput['repeat']['type'];
@@ -91,7 +92,7 @@ export function formatScheduleTime(time: string): string {
 
 export function normalizeScheduleTimes(schedule: { times?: string[]; time?: string }): string[] {
   const candidates = schedule.times?.length ? schedule.times : schedule.time ? [schedule.time] : [];
-  return Array.from(new Set(candidates.filter(time => /^([01]\d|2[0-3]):[0-5]\d$/.test(time)))).sort();
+  return Array.from(new Set(candidates.filter(isValidTime))).sort();
 }
 
 export function normalizeSchedule(schedule: Schedule): Schedule {

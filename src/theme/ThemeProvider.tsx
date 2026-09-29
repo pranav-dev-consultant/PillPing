@@ -3,6 +3,7 @@ import { useColorScheme } from 'react-native';
 
 import { useAccount } from '../features/account/hooks/useAccount';
 import type { AppearancePreference } from '../features/account/types/account.types';
+import { colors } from './colors';
 
 export type ThemePalette = {
   primary: string;
@@ -21,19 +22,11 @@ export type ThemePalette = {
 };
 
 const lightPalette: ThemePalette = {
-  primary: '#2563EB',
-  background: '#F7F8FA',
-  surface: '#FFFFFF',
-  text: '#111827',
-  muted: '#6B7280',
-  border: '#E6E8EC',
+  ...colors,
   fieldBorder: '#D1D5DB',
   label: '#374151',
   selected: '#DBEAFE',
   selectedText: '#1D4ED8',
-  success: '#16A34A',
-  danger: '#DC2626',
-  warning: '#D97706',
 };
 
 const darkPalette: ThemePalette = {
