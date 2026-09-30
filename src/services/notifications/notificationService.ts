@@ -11,13 +11,23 @@ import notifee, {
 } from '@notifee/react-native';
 import { Platform } from 'react-native';
 
-import { upsertHistoryItemForOccurrence } from '../../features/history/services/historyService';
+import {
+  reactivateSnoozedOccurrence,
+  upsertHistoryItemForOccurrence,
+} from '../../features/history/services/historyService';
 import type { Schedule } from '../../features/schedule/types/schedule.types';
 import { formatScheduleTime, getScheduleOccurrencesOnDate, normalizeSchedule, normalizeScheduleTimes } from '../../features/schedule/utils/scheduleUtils';
 import { STORAGE_KEYS, getStoredValue, setStoredValue } from '../storage/storageService';
 import { isValidTime } from '../../utils/validation';
+import {
+  DEFAULT_ALARM_TONE_ID,
+  getAlarmTone,
+  getAndroidAlarmSound,
+  getIOSAlarmSound,
+  type AlarmToneId,
+} from './alarmTones';
 
-const CHANNEL_ID = 'medicine-reminders';
+const CHANNEL_ID = 'medicine-reminders-v2';
 const IOS_CATEGORY_ID = 'medicine-reminder-actions';
 const SNOOZE_DURATION_MINUTES = 10;
 const MAX_PENDING_NOTIFICATIONS = 40;
@@ -32,12 +42,13 @@ const ACTION_SKIPPED = 'skipped';
 const ACTION_SNOOZE = 'snooze';
 type ReminderSound = 'default' | 'silent';
 type NotificationPreferences = {
+  alarmTone?: AlarmToneId;
   reminderSound?: ReminderSound;
   snoozeDurationMinutes?: number;
 };
 
-function getChannelId(sound: ReminderSound): string {
-  return `${CHANNEL_ID}-${sound}`;
+function getChannelId(toneId: AlarmToneId, sound: ReminderSound): string {
+  return `${CHANNEL_ID}-${toneId}-${sound}`;
 }
 
 type DoseOccurrence = {
@@ -143,7 +154,7 @@ function timestampTrigger(timestamp: number, useAlarmManager: boolean): Timestam
     type: TriggerType.TIMESTAMP,
     timestamp,
     ...(useAlarmManager
-      ? { alarmManager: { type: AlarmType.SET_AND_ALLOW_WHILE_IDLE } }
+      ? { alarmManager: { type: AlarmType.SET_EXACT_AND_ALLOW_WHILE_IDLE } }
       : {}),
   };
 }
@@ -155,10 +166,12 @@ function buildNotification(
   time: string,
   notificationId: string,
   managedBy: string,
+  toneId: AlarmToneId,
   sound: ReminderSound,
 ): Notification {
   const doseText = `${schedule.dose} ${schedule.dose === 1 ? 'dose' : 'doses'}`;
   const timeText = formatScheduleTime(time);
+  const tone = getAlarmTone(toneId);
 
   return {
     id: notificationId,
@@ -174,8 +187,13 @@ function buildNotification(
       time,
     },
     android: {
-      channelId: getChannelId(sound),
+      channelId: getChannelId(tone.id, sound),
       pressAction: { id: ACTION_OPEN, launchActivity: 'default' },
+      fullScreenAction: { id: ACTION_OPEN, launchActivity: 'default' },
+      ongoing: true,
+      autoCancel: false,
+      loopSound: sound !== 'silent',
+      lightUpScreen: true,
       actions: [
         { title: 'Taken', pressAction: { id: ACTION_TAKEN } },
         { title: 'Snooze', pressAction: { id: ACTION_SNOOZE } },
@@ -184,7 +202,7 @@ function buildNotification(
     },
     ios: {
       categoryId: IOS_CATEGORY_ID,
-      ...(sound === 'default' ? { sound: 'default' } : {}),
+      ...(sound === 'default' ? { sound: getIOSAlarmSound(tone) } : {}),
       foregroundPresentationOptions: {
         banner: true,
         list: true,
@@ -195,13 +213,17 @@ function buildNotification(
   };
 }
 
-async function configureNotificationPresentation(sound: ReminderSound = 'default'): Promise<void> {
+async function configureNotificationPresentation(
+  toneId: AlarmToneId = DEFAULT_ALARM_TONE_ID,
+  sound: ReminderSound = 'default',
+): Promise<void> {
   if (Platform.OS === 'android') {
+    const tone = getAlarmTone(toneId);
     await notifee.createChannel({
-      id: getChannelId(sound),
-      name: 'Medicine reminders',
+      id: getChannelId(tone.id, sound),
+      name: `${tone.name} medicine reminders`,
       importance: AndroidImportance.HIGH,
-      sound: sound === 'default' ? 'default' : undefined,
+      sound: sound === 'default' ? getAndroidAlarmSound(tone) : undefined,
       vibration: true,
     });
     return;
@@ -330,8 +352,9 @@ export async function reconcileScheduleNotifications(
       STORAGE_KEYS.account,
       null,
     );
+    const alarmTone = getAlarmTone(preferences?.alarmTone).id;
     const reminderSound = preferences?.reminderSound ?? 'default';
-    await configureNotificationPresentation(reminderSound);
+    await configureNotificationPresentation(alarmTone, reminderSound);
     const permitted = options.requestPermission
       ? await requestNotificationPermission()
       : await hasNotificationPermission();
@@ -369,6 +392,7 @@ export async function reconcileScheduleNotifications(
               occurrence.scheduledAt.toTimeString().slice(0, 5),
             ),
             MANAGED_SCHEDULE,
+            alarmTone,
             reminderSound,
           ),
           timestampTrigger(occurrence.scheduledAt.getTime(), useAlarmManager),
@@ -393,6 +417,43 @@ export async function initializeNotificationService(): Promise<void> {
     }
   } catch (error) {
     console.warn('[Notifications] Initialization failed', error);
+  }
+}
+
+export async function previewAlarmTone(toneId: AlarmToneId): Promise<void> {
+  if (!(await requestNotificationPermission())) {
+    throw new Error('Notification permission is required to preview alarm tones.');
+  }
+
+  const tone = getAlarmTone(toneId);
+  await configureNotificationPresentation(tone.id);
+  const previewId = 'pillping-alarm-tone-preview';
+  await notifee.displayNotification({
+    id: previewId,
+    title: `${tone.name} preview`,
+    body: 'PillPing medicine reminder',
+    android: {
+      channelId: getChannelId(tone.id, 'default'),
+      timeoutAfter: 4000,
+    },
+    ios: {
+      sound: getIOSAlarmSound(tone),
+      foregroundPresentationOptions: {
+        banner: true,
+        list: true,
+        sound: true,
+        badge: false,
+      },
+    },
+  });
+  setTimeout(() => {
+    notifee.cancelNotification(previewId).catch(() => undefined);
+  }, 4000);
+}
+
+export async function openAndroidAlarmPermissionSettings(): Promise<void> {
+  if (Platform.OS === 'android') {
+    await notifee.openAlarmPermissionSettings();
   }
 }
 
@@ -498,8 +559,10 @@ async function snoozeNotification(notification: Notification): Promise<void> {
     null,
   );
   const snoozeDuration = preferences?.snoozeDurationMinutes ?? SNOOZE_DURATION_MINUTES;
+  const alarmTone = getAlarmTone(preferences?.alarmTone).id;
   const reminderSound = preferences?.reminderSound ?? 'default';
-  await configureNotificationPresentation(reminderSound);
+  await configureNotificationPresentation(alarmTone, reminderSound);
+  const tone = getAlarmTone(alarmTone);
   const snoozeAt = Date.now() + snoozeDuration * 60 * 1000;
   const bodyTime = formatScheduleTime(time);
   const snoozed: Notification = {
@@ -511,8 +574,13 @@ async function snoozeNotification(notification: Notification): Promise<void> {
       managedBy: MANAGED_SNOOZE,
     },
     android: {
-      channelId: getChannelId(reminderSound),
+      channelId: getChannelId(tone.id, reminderSound),
       pressAction: { id: ACTION_OPEN, launchActivity: 'default' },
+      fullScreenAction: { id: ACTION_OPEN, launchActivity: 'default' },
+      ongoing: true,
+      autoCancel: false,
+      loopSound: reminderSound !== 'silent',
+      lightUpScreen: true,
       actions: [
         { title: 'Taken', pressAction: { id: ACTION_TAKEN } },
         { title: 'Snooze', pressAction: { id: ACTION_SNOOZE } },
@@ -521,7 +589,7 @@ async function snoozeNotification(notification: Notification): Promise<void> {
     },
     ios: {
       categoryId: IOS_CATEGORY_ID,
-      ...(reminderSound === 'default' ? { sound: 'default' } : {}),
+      ...(reminderSound === 'default' ? { sound: getIOSAlarmSound(tone) } : {}),
       foregroundPresentationOptions: { banner: true, list: true, sound: true },
     },
   };
@@ -587,15 +655,22 @@ export async function handleNotificationEvent(event: Event): Promise<boolean> {
     const notification = event.detail.notification;
     if (!notification) return false;
 
-    if (
-      event.type === EventType.DELIVERED &&
-      getString(notification.data, 'managedBy') === MANAGED_SCHEDULE
-    ) {
-      await reconcileScheduleNotifications();
+    if (event.type === EventType.DELIVERED) {
+      const managedBy = getString(notification.data, 'managedBy');
+      if (managedBy === MANAGED_SCHEDULE) {
+        await reconcileScheduleNotifications();
+      } else if (managedBy === MANAGED_SNOOZE) {
+        const occurrenceId = getString(notification.data, 'occurrenceId');
+        if (occurrenceId) await reactivateSnoozedOccurrence(occurrenceId);
+      }
       return false;
     }
 
     if (event.type === EventType.PRESS) {
+      if (getString(notification.data, 'managedBy') === MANAGED_SNOOZE) {
+        const occurrenceId = getString(notification.data, 'occurrenceId');
+        if (occurrenceId) await reactivateSnoozedOccurrence(occurrenceId);
+      }
       return getString(notification.data, 'scheduleId') !== undefined;
     }
 
@@ -635,6 +710,10 @@ export function subscribeToNotificationEvents(
 export async function getInitialNotificationTarget(): Promise<ReminderOccurrenceTarget | undefined> {
   try {
     const initial = await notifee.getInitialNotification();
+    if (initial && getString(initial.notification.data, 'managedBy') === MANAGED_SNOOZE) {
+      const occurrenceId = getString(initial.notification.data, 'occurrenceId');
+      if (occurrenceId) await reactivateSnoozedOccurrence(occurrenceId);
+    }
     return initial ? getOccurrenceTarget(initial.notification) : undefined;
   } catch (error) {
     console.warn('[Notifications] Could not read launch notification', error);

@@ -16,10 +16,12 @@ import { launchImageLibrary } from 'react-native-image-picker';
 import RNFS from 'react-native-fs';
 import {
   BellRing,
+  AlarmClock,
   CalendarDays,
   Camera,
   Check,
   ChevronDown,
+  ChevronRight,
   CircleUserRound,
   LogOut,
   Moon,
@@ -30,11 +32,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { clearStoredValues, STORAGE_KEYS } from '../../../services/storage/storageService';
-import { cancelMedicationNotifications, reconcileScheduleNotifications } from '../../../services/notifications/notificationService';
+import { cancelMedicationNotifications, openAndroidAlarmPermissionSettings, reconcileScheduleNotifications } from '../../../services/notifications/notificationService';
 import { clearHistory } from '../../history/services/historyService';
 import { useTheme } from '../../../theme/ThemeProvider';
 import type { UserAccount } from '../types/account.types';
 import { useAccount } from '../hooks/useAccount';
+import { getAlarmTone } from '../../../services/notifications/alarmTones';
+import type { RootStackParamList } from '../../../navigation/AppNavigator';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const SNOOZE_OPTIONS = [5, 10, 30, 60];
@@ -94,6 +100,7 @@ function ageFromDateOfBirth(value?: string) {
 export function AccountScreen() {
   const { account, loading, updateProfile, resetAccount } = useAccount();
   const { palette, appearance, setAppearance } = useTheme();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const [name, setName] = useState(account.name);
   const [saving, setSaving] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -195,7 +202,7 @@ export function AccountScreen() {
                 if (avatarUri?.startsWith(`file://${RNFS.DocumentDirectoryPath}/`)) {
                   await RNFS.unlink(avatarUri.replace(/^file:\/\//, '')).catch(() => undefined);
                 }
-                setName('PillPing User');
+                setName('');
                 Alert.alert('Local data cleared', 'Your profile and medication data were removed.');
               } catch {
                 Alert.alert('Unable to clear local data', 'Some reminders or data could not be removed. Please try again.');
@@ -322,6 +329,19 @@ export function AccountScreen() {
         </View>
 
         <SectionTitle title="Reminder Settings" color={palette.text} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Alarm Tone, ${getAlarmTone(account.alarmTone).name}`}
+          onPress={() => navigation.navigate('AlarmTone')}
+          style={[styles.selectField, controlStyle, styles.alarmToneRow]}
+        >
+          <BellRing size={18} color={palette.primary} />
+          <View style={styles.alarmToneText}>
+            <Text style={[styles.choiceText, { color: palette.label }]}>Alarm Tone</Text>
+            <Text style={[styles.helper, styles.alarmToneValue, { color: palette.muted }]}>{getAlarmTone(account.alarmTone).name}</Text>
+          </View>
+          <ChevronRight size={18} color={palette.muted} />
+        </Pressable>
         <SettingHeading icon={<BellRing size={18} color={palette.primary} />} title="Reminder Sound" color={palette.label} />
         <View style={styles.wrapRow}>
           {SOUND_OPTIONS.map(option => (
@@ -351,6 +371,22 @@ export function AccountScreen() {
             />
           ))}
         </View>
+        {Platform.OS === 'android' && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open exact alarm access settings"
+            onPress={() => {
+              openAndroidAlarmPermissionSettings().catch(() => {
+                Alert.alert('Unable to open alarm settings', 'Open PillPing in Android Settings to manage exact alarms.');
+              });
+            }}
+            style={[styles.actionRow, controlStyle, styles.alarmSettingsRow]}
+          >
+            <AlarmClock size={18} color={palette.primary} />
+            <Text style={[styles.actionText, { color: palette.label }]}>Exact alarm access</Text>
+            <ChevronRight size={18} color={palette.muted} />
+          </Pressable>
+        )}
 
         <SectionTitle title="Appearance" color={palette.text} />
         <View style={styles.wrapRow}>
@@ -461,6 +497,10 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
   selectField: { minHeight: 48, borderWidth: 1, borderRadius: 10, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', gap: 10 },
   selectText: { flex: 1, fontSize: 15 },
+  alarmToneRow: { marginTop: 8, minHeight: 62 },
+  alarmToneText: { flex: 1 },
+  alarmToneValue: { marginTop: 3, marginBottom: 0 },
+  alarmSettingsRow: { marginTop: 10 },
   helper: { marginTop: 7, fontSize: 13, lineHeight: 18 },
   wrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   choice: { minHeight: 40, paddingHorizontal: 14, borderWidth: 1, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },

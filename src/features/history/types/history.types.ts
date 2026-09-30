@@ -6,5 +6,6 @@ export type HistoryItem = {
   scheduleTitle: string;
   scheduledAt: string;
   status: ActionStatus;
+  isActionable?: boolean;
   actionedAt?: string;
 };

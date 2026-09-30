@@ -45,6 +45,7 @@ export async function upsertHistoryItemForOccurrence(input: {
   scheduleTitle: string;
   scheduledAt: string;
   status: ActionStatus;
+  isActionable?: boolean;
 }): Promise<void> {
   const clearedAt = await getStoredValue<string | null>(STORAGE_KEYS.historyClearedAt, null);
   if (clearedAt && input.scheduledAt <= clearedAt) return;
@@ -56,11 +57,26 @@ export async function upsertHistoryItemForOccurrence(input: {
     scheduleTitle: input.scheduleTitle,
     scheduledAt: input.scheduledAt,
     status: input.status,
+    isActionable: input.isActionable ?? false,
     actionedAt: new Date().toISOString(),
   };
 
   await setStoredValue(
     STORAGE_KEYS.history,
     [item, ...history.filter(existing => existing.id !== item.id)],
+  );
+}
+
+export async function reactivateSnoozedOccurrence(occurrenceId: string): Promise<void> {
+  const history = await getHistory();
+  const itemId = `occurrence-${encodeURIComponent(occurrenceId)}`;
+  const item = history.find(existing => existing.id === itemId);
+  if (!item || item.status !== 'snoozed' || item.isActionable) return;
+
+  await setStoredValue(
+    STORAGE_KEYS.history,
+    history.map(existing =>
+      existing.id === itemId ? { ...existing, isActionable: true } : existing,
+    ),
   );
 }

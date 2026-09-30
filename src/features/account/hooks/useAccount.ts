@@ -7,11 +7,13 @@ import {
   removeStoredValue,
   setStoredValue,
 } from '../../../services/storage/storageService';
+import { DEFAULT_ALARM_TONE_ID } from '../../../services/notifications/alarmTones';
 
 const DEFAULT_ACCOUNT: UserAccount = {
   id: 'local-user',
-  name: 'PillPing User',
+  name: '',
   createdAt: new Date().toISOString(),
+  alarmTone: DEFAULT_ALARM_TONE_ID,
   reminderSound: 'default',
   snoozeDurationMinutes: 10,
   appearance: 'system',

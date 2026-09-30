@@ -31,14 +31,19 @@ function formatStoredTime(date: Date): string {
 function getCardOccurrences(
   schedule: Schedule,
   now: Date,
-  historyById: Map<string, ActionStatus>,
+  historyById: Map<string, HistoryItem>,
   notificationTarget?: ReminderOccurrenceTarget,
 ): ScheduleCardOccurrence[] {
   if (!schedule.isActive) return [];
 
+  const getStatus = (occurrenceId: string): ActionStatus | undefined => {
+    const item = historyById.get(`occurrence-${encodeURIComponent(occurrenceId)}`);
+    return item?.isActionable ? undefined : item?.status;
+  };
+
   const occurrences: ScheduleCardOccurrence[] = getScheduleOccurrencesOnDate(schedule, now).map(occurrence => ({
     ...occurrence,
-    status: historyById.get(`occurrence-${encodeURIComponent(occurrence.occurrenceId)}`),
+    status: getStatus(occurrence.occurrenceId),
   }));
 
   if (notificationTarget?.scheduleId === schedule.id) {
@@ -49,7 +54,7 @@ function getCardOccurrences(
         occurrenceId: notificationTarget.occurrenceId,
         scheduledAt,
         time: formatStoredTime(scheduledAt),
-        status: historyById.get(`occurrence-${encodeURIComponent(notificationTarget.occurrenceId)}`),
+        status: getStatus(notificationTarget.occurrenceId),
       });
     }
   }
@@ -77,7 +82,7 @@ export function ScheduleListScreen() {
   const listRef = useRef<FlatList<Schedule>>(null);
   const notificationTarget = route.params?.notificationTarget;
   const focusKey = route.params?.focusKey;
-  const historyById = new Map(history.map(item => [item.id, item.status]));
+  const historyById = new Map(history.map(item => [item.id, item]));
 
   const refreshHistory = useCallback(async () => {
     setHistory(await getHistory());
