@@ -1,4 +1,4 @@
-import type { AlarmToneId } from '../../../services/notifications/alarmTones';
+import type { AlarmToneId, AlarmToneSelection } from '../../../services/notifications/alarmTones';
 
 export type UserAccount = {
   id: string;
@@ -8,6 +8,7 @@ export type UserAccount = {
   dateOfBirth?: string;
   bloodGroup?: string;
   alarmTone?: AlarmToneId;
+  alarmToneSelection?: AlarmToneSelection;
   reminderSound?: ReminderSound;
   snoozeDurationMinutes?: number;
   appearance?: AppearancePreference;

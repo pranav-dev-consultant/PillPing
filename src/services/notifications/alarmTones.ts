@@ -1,13 +1,13 @@
-export const DEFAULT_ALARM_TONE_ID = 'pillping_alert' as const;
+export const DEFAULT_ALARM_TONE_ID = 'best_reminder' as const;
 
 export const ALARM_TONES = [
   {
-    id: 'pillping_alert',
+    id: 'best_reminder',
     name: 'PillPing Alert',
-    androidSound: 'pillping_alert',
-    iosSound: 'pillping_alert.wav',
+    androidSound: 'best_reminder',
+    iosSound: 'best_reminder.wav',
     recommended: true,
-    bundled: false,
+    bundled: true,
   },
   {
     id: 'gentle_alarm',
@@ -45,8 +45,31 @@ export const ALARM_TONES = [
 
 export type AlarmToneId = (typeof ALARM_TONES)[number]['id'];
 export type AlarmTone = (typeof ALARM_TONES)[number];
+export type AlarmToneSelection =
+  | { source: 'builtin'; toneId: AlarmToneId }
+  | { source: 'device'; toneId: 'custom'; fileName: string; uri: string };
+
+export function getSelectedAlarmTone(
+  selection?: AlarmToneSelection,
+  legacyToneId?: string,
+): AlarmToneSelection {
+  if (selection?.source === 'device' && selection.uri && selection.fileName) {
+    return selection;
+  }
+  if (selection?.source === 'builtin') {
+    return { source: 'builtin', toneId: getAlarmTone(selection.toneId).id };
+  }
+  return { source: 'builtin', toneId: getAlarmTone(legacyToneId).id };
+}
+
+export function getAlarmToneSelectionName(selection: AlarmToneSelection): string {
+  return selection.source === 'device'
+    ? selection.fileName
+    : getAlarmTone(selection.toneId).name;
+}
 
 export function getAlarmTone(value?: string): AlarmTone {
+  if (value === 'pillping_alert') return ALARM_TONES[0];
   return ALARM_TONES.find(tone => tone.id === value) ?? ALARM_TONES[0];
 }
 

@@ -7,13 +7,21 @@ import {
   removeStoredValue,
   setStoredValue,
 } from '../../../services/storage/storageService';
-import { DEFAULT_ALARM_TONE_ID } from '../../../services/notifications/alarmTones';
+import {
+  DEFAULT_ALARM_TONE_ID,
+  getSelectedAlarmTone,
+} from '../../../services/notifications/alarmTones';
+import {
+  deleteDeviceAlarmTone,
+  isDeviceAlarmToneAvailable,
+} from '../../../services/notifications/deviceAlarmTone';
 
 const DEFAULT_ACCOUNT: UserAccount = {
   id: 'local-user',
   name: '',
   createdAt: new Date().toISOString(),
   alarmTone: DEFAULT_ALARM_TONE_ID,
+  alarmToneSelection: { source: 'builtin', toneId: DEFAULT_ALARM_TONE_ID },
   reminderSound: 'default',
   snoozeDurationMinutes: 10,
   appearance: 'system',
@@ -38,7 +46,26 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     try {
       const saved = await getStoredValue<UserAccount | null>(STORAGE_KEYS.account, null);
       if (saved) {
-        setAccount({ ...DEFAULT_ACCOUNT, ...saved });
+        const selection = getSelectedAlarmTone(saved.alarmToneSelection, saved.alarmTone);
+        let nextAccount: UserAccount = {
+          ...DEFAULT_ACCOUNT,
+          ...saved,
+          alarmToneSelection: selection,
+          alarmTone: selection.source === 'builtin' ? selection.toneId : DEFAULT_ALARM_TONE_ID,
+        };
+        if (
+          selection.source === 'device' &&
+          !(await isDeviceAlarmToneAvailable(selection.uri).catch(() => false))
+        ) {
+          nextAccount = {
+            ...nextAccount,
+            alarmTone: DEFAULT_ALARM_TONE_ID,
+            alarmToneSelection: { source: 'builtin', toneId: DEFAULT_ALARM_TONE_ID },
+          };
+          await deleteDeviceAlarmTone(selection.uri).catch(() => undefined);
+        }
+        await setStoredValue(STORAGE_KEYS.account, nextAccount);
+        setAccount(nextAccount);
       } else {
         await setStoredValue(STORAGE_KEYS.account, DEFAULT_ACCOUNT);
         setAccount(DEFAULT_ACCOUNT);

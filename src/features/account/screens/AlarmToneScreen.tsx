@@ -1,13 +1,29 @@
-import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Check, Circle, Play, Volume2 } from 'lucide-react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Check, ChevronRight, Circle, FolderOpen, Play, Volume2 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { useAccount } from '../hooks/useAccount';
-import { ALARM_TONES, getAlarmTone, type AlarmToneId } from '../../../services/notifications/alarmTones';
-import { previewAlarmTone, reconcileScheduleNotifications } from '../../../services/notifications/notificationService';
+import {
+  ALARM_TONES,
+  DEFAULT_ALARM_TONE_ID,
+  getSelectedAlarmTone,
+  type AlarmToneId,
+  type AlarmToneSelection,
+} from '../../../services/notifications/alarmTones';
+import {
+  previewAlarmTone,
+  reconcileScheduleNotifications,
+  stopAlarmTonePreview,
+} from '../../../services/notifications/notificationService';
+import {
+  createDeviceAlarmToneChannel,
+  deleteDeviceAlarmTone,
+  isDeviceAlarmToneSupported,
+  pickDeviceAlarmTone,
+} from '../../../services/notifications/deviceAlarmTone';
 import type { RootStackParamList } from '../../../navigation/AppNavigator';
 import { useTheme } from '../../../theme/ThemeProvider';
 
@@ -15,14 +31,24 @@ export function AlarmToneScreen() {
   const { account, updateProfile } = useAccount();
   const { palette } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList, 'AlarmTone'>>();
-  const [previewing, setPreviewing] = useState<AlarmToneId | null>(null);
+  const [previewing, setPreviewing] = useState<AlarmToneId | 'device' | null>(null);
   const [saving, setSaving] = useState(false);
-  const selectedTone = getAlarmTone(account.alarmTone).id;
+  const [deviceSupported, setDeviceSupported] = useState(false);
+  const selectedTone = getSelectedAlarmTone(account.alarmToneSelection, account.alarmTone);
+  const selectedBuiltinTone = selectedTone.source === 'builtin' ? selectedTone.toneId : null;
+  const selectedDeviceTone = selectedTone.source === 'device' ? selectedTone : null;
 
-  const preview = async (toneId: AlarmToneId) => {
-    setPreviewing(toneId);
+  useEffect(() => {
+    isDeviceAlarmToneSupported().then(setDeviceSupported).catch(() => setDeviceSupported(false));
+    return navigation.addListener('blur', () => {
+      stopAlarmTonePreview().catch(() => undefined);
+    });
+  }, [navigation]);
+
+  const preview = async (selection: AlarmToneSelection, previewId: AlarmToneId | 'device') => {
+    setPreviewing(previewId);
     try {
-      await previewAlarmTone(toneId);
+      await previewAlarmTone(selection);
     } catch {
       Alert.alert('Unable to preview tone', 'Allow notifications in Settings, then try again.');
     } finally {
@@ -31,18 +57,71 @@ export function AlarmToneScreen() {
   };
 
   const select = async (toneId: AlarmToneId) => {
-    if (toneId === selectedTone) {
+    if (selectedTone.source === 'builtin' && toneId === selectedTone.toneId) {
       navigation.goBack();
       return;
     }
 
+    await stopAlarmTonePreview();
     setSaving(true);
     try {
-      await updateProfile({ alarmTone: toneId });
+      await updateProfile({
+        alarmTone: toneId,
+        alarmToneSelection: { source: 'builtin', toneId },
+      });
       await reconcileScheduleNotifications();
+      if (selectedDeviceTone) {
+        await deleteDeviceAlarmTone(selectedDeviceTone.uri).catch(() => undefined);
+      }
       navigation.goBack();
     } catch {
       Alert.alert('Unable to save tone', 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const chooseDeviceTone = async () => {
+    if (!deviceSupported) {
+      Alert.alert(
+        'Device tones unavailable',
+        Platform.OS === 'ios'
+          ? 'iOS notification sounds must be bundled with the app. Device audio can’t be used for medicine alarms.'
+          : 'Custom notification sounds require Android 8 or later.',
+      );
+      return;
+    }
+
+    await stopAlarmTonePreview();
+    setSaving(true);
+    let importedUri: string | undefined;
+    let selectionSaved = false;
+    try {
+      const imported = await pickDeviceAlarmTone();
+      if (!imported) return;
+      importedUri = imported.uri;
+      const selection: AlarmToneSelection = {
+        source: 'device',
+        toneId: 'custom',
+        fileName: imported.fileName,
+        uri: imported.uri,
+      };
+      await createDeviceAlarmToneChannel(imported.uri, imported.fileName, true);
+      await updateProfile({
+        alarmTone: DEFAULT_ALARM_TONE_ID,
+        alarmToneSelection: selection,
+      });
+      selectionSaved = true;
+      await reconcileScheduleNotifications();
+      if (selectedDeviceTone && selectedDeviceTone.uri !== imported.uri) {
+        await deleteDeviceAlarmTone(selectedDeviceTone.uri).catch(() => undefined);
+      }
+    } catch (error) {
+      if (importedUri && !selectionSaved) {
+        await deleteDeviceAlarmTone(importedUri).catch(() => undefined);
+      }
+      const message = error instanceof Error ? error.message : 'Please choose another audio file.';
+      Alert.alert('Unable to use this audio file', message);
     } finally {
       setSaving(false);
     }
@@ -56,7 +135,7 @@ export function AlarmToneScreen() {
           <Text style={[styles.introTitle, { color: palette.text }]}>Choose a reminder tone</Text>
         </View>
         {ALARM_TONES.map(tone => {
-          const selected = tone.id === selectedTone;
+          const selected = tone.id === selectedBuiltinTone;
           const isPreviewing = previewing === tone.id;
           return (
             <View
@@ -81,7 +160,9 @@ export function AlarmToneScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={`Preview ${tone.name}`}
                 disabled={previewing !== null || saving}
-                onPress={() => { preview(tone.id); }}
+                onPress={() => {
+                  preview({ source: 'builtin', toneId: tone.id }, tone.id);
+                }}
                 style={[styles.previewButton, { backgroundColor: palette.selected }]}
               >
                 {isPreviewing ? <ActivityIndicator size="small" color={palette.primary} /> : <Play size={17} color={palette.primary} />}
@@ -89,8 +170,50 @@ export function AlarmToneScreen() {
             </View>
           );
         })}
+        {selectedDeviceTone && (
+          <View style={[styles.toneRow, { borderColor: palette.primary, backgroundColor: palette.surface }]}>
+            <View style={styles.selectButton}>
+              <Check size={19} color={palette.primary} />
+              <View style={styles.toneText}>
+                <Text style={[styles.toneName, { color: palette.text }]} numberOfLines={1}>{selectedDeviceTone.fileName}</Text>
+                <Text style={[styles.recommended, { color: palette.primary }]}>Selected from device</Text>
+              </View>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Preview ${selectedDeviceTone.fileName}`}
+              disabled={previewing !== null || saving}
+              onPress={() => { preview(selectedDeviceTone, 'device'); }}
+              style={[styles.previewButton, { backgroundColor: palette.selected }]}
+            >
+              {previewing === 'device' ? <ActivityIndicator size="small" color={palette.primary} /> : <Play size={17} color={palette.primary} />}
+            </Pressable>
+          </View>
+        )}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Choose alarm tone from device"
+          disabled={saving || !deviceSupported}
+          onPress={() => { chooseDeviceTone(); }}
+          style={[
+            styles.deviceRow,
+            { borderColor: palette.border, backgroundColor: palette.surface },
+            !deviceSupported && styles.disabledDeviceRow,
+          ]}
+        >
+          <FolderOpen size={20} color={palette.primary} />
+          <View style={styles.toneText}>
+            <Text style={[styles.toneName, { color: palette.text }]}>Choose from device</Text>
+            <Text style={[styles.recommended, { color: palette.muted }]}>Select your own alarm sound</Text>
+          </View>
+          <ChevronRight size={18} color={palette.muted} />
+        </Pressable>
         <Text style={[styles.note, { color: palette.muted }]}>
-          Custom tone audio files are not bundled yet. Preview and reminders use the system notification sound until the tone files are added.
+          {Platform.OS === 'ios'
+            ? 'iOS allows notification sounds bundled with PillPing only. Device audio selection is unavailable for medicine alarms.'
+            : deviceSupported
+              ? 'MP3, WAV, M4A, and AAC files are imported as device notification sounds for future reminders.'
+              : 'Device notification sounds require Android 8 or later.'}
         </Text>
         {saving && <ActivityIndicator style={styles.saving} color={palette.primary} />}
       </ScrollView>
@@ -104,6 +227,8 @@ const styles = StyleSheet.create({
   intro: { flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 6 },
   introTitle: { fontSize: 16, fontWeight: '700' },
   toneRow: { minHeight: 66, borderWidth: 1, borderRadius: 8, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12 },
+  deviceRow: { minHeight: 66, borderWidth: 1, borderRadius: 8, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 12 },
+  disabledDeviceRow: { opacity: 0.62 },
   selectButton: { flex: 1, minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 12 },
   toneText: { flex: 1 },
   toneName: { fontSize: 15, fontWeight: '600' },

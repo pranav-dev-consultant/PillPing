@@ -4,10 +4,14 @@
 
 | Tone ID | Android resource | iOS resource |
 | --- | --- | --- |
-| `pillping_alert` | `pillping_alert` | `pillping_alert.wav` |
+| `best_reminder` | `best_reminder` | `best_reminder.wav` |
 | `gentle_alarm` | `gentle_alarm` | `gentle_alarm.wav` |
 | `classic_alarm` | `classic_alarm` | `classic_alarm.wav` |
 | `digital_alarm` | `digital_alarm` | `digital_alarm.wav` |
 | `soft_chime` | `soft_chime` | `soft_chime.wav` |
 
-After adding all required platform assets, set each catalog entry's `bundled` value to `true`. iOS custom notification sounds must meet Apple's supported format and duration limits. Android sound and importance are fixed when a notification channel is first created, so increment the `medicine-reminders-v2` channel version in `notificationService.ts` when changing bundled sounds for an installed app. Rebuild and reinstall after native resources change.
+`best_reminder.mp3` is bundled directly as Android's `res/raw/best_reminder.mp3`; iOS uses the PCM WAV conversion `PillPing/best_reminder.wav`, registered in the target's Copy Bundle Resources phase. Android users can also choose MP3, WAV, M4A, or AAC audio. The app imports a private copy into `Ringtones/PillPing` in MediaStore and creates one immutable channel per selected sound, not per medicine. iOS does not expose device-file selection because notification sounds must be bundled with the app.
+
+iOS custom notification sounds must meet Apple's supported format and duration limits; iOS notification sounds play once and cannot be looped by the local notification API. Android reminders request `loopSound` and keep the notification ongoing until an action handles it.
+
+Android sound and importance are fixed when a notification channel is first created. The channel namespace is `medicine-reminders-v1`; updating creates new channels for the bundled tone and device-selected sounds. Rebuild and install the updated app; no uninstall is needed. Android may retain old channels in system settings, but PillPing schedules against the new channel IDs.

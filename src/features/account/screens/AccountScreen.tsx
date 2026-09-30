@@ -30,6 +30,7 @@ import {
   X,
 } from 'lucide-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 
 import { clearStoredValues, STORAGE_KEYS } from '../../../services/storage/storageService';
 import { cancelMedicationNotifications, openAndroidAlarmPermissionSettings, reconcileScheduleNotifications } from '../../../services/notifications/notificationService';
@@ -37,7 +38,12 @@ import { clearHistory } from '../../history/services/historyService';
 import { useTheme } from '../../../theme/ThemeProvider';
 import type { UserAccount } from '../types/account.types';
 import { useAccount } from '../hooks/useAccount';
-import { getAlarmTone } from '../../../services/notifications/alarmTones';
+import {
+  DEFAULT_ALARM_TONE_ID,
+  getAlarmToneSelectionName,
+  getSelectedAlarmTone,
+} from '../../../services/notifications/alarmTones';
+import { isDeviceAlarmToneAvailable } from '../../../services/notifications/deviceAlarmTone';
 import type { RootStackParamList } from '../../../navigation/AppNavigator';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
@@ -104,8 +110,28 @@ export function AccountScreen() {
   const [name, setName] = useState(account.name);
   const [saving, setSaving] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const alarmToneSelection = getSelectedAlarmTone(account.alarmToneSelection, account.alarmTone);
+  const alarmToneName = getAlarmToneSelectionName(alarmToneSelection);
 
   useEffect(() => setName(account.name), [account.name]);
+
+  useFocusEffect(React.useCallback(() => {
+    const selection = getSelectedAlarmTone(account.alarmToneSelection, account.alarmTone);
+    if (selection.source !== 'device') return undefined;
+    let active = true;
+    isDeviceAlarmToneAvailable(selection.uri)
+      .then(available => {
+        if (active && !available) {
+          return updateProfile({
+            alarmTone: DEFAULT_ALARM_TONE_ID,
+            alarmToneSelection: { source: 'builtin', toneId: DEFAULT_ALARM_TONE_ID },
+          }).then(() => reconcileScheduleNotifications());
+        }
+        return undefined;
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [account.alarmToneSelection, account.alarmTone, updateProfile]));
 
   const persist = async (changes: Partial<UserAccount>) => {
     setSaving(true);
@@ -331,14 +357,14 @@ export function AccountScreen() {
         <SectionTitle title="Reminder Settings" color={palette.text} />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Alarm Tone, ${getAlarmTone(account.alarmTone).name}`}
+          accessibilityLabel={`Alarm Tone, ${alarmToneName}`}
           onPress={() => navigation.navigate('AlarmTone')}
           style={[styles.selectField, controlStyle, styles.alarmToneRow]}
         >
           <BellRing size={18} color={palette.primary} />
           <View style={styles.alarmToneText}>
             <Text style={[styles.choiceText, { color: palette.label }]}>Alarm Tone</Text>
-            <Text style={[styles.helper, styles.alarmToneValue, { color: palette.muted }]}>{getAlarmTone(account.alarmTone).name}</Text>
+            <Text style={[styles.helper, styles.alarmToneValue, { color: palette.muted }]}>{alarmToneName}</Text>
           </View>
           <ChevronRight size={18} color={palette.muted} />
         </Pressable>
@@ -430,6 +456,11 @@ export function AccountScreen() {
           <Trash2 size={18} color={palette.danger} />
           <Text style={[styles.actionText, { color: palette.danger }]}>Delete Account / Clear Data</Text>
         </Pressable>
+
+        <View style={[styles.versionRow, controlStyle]}>
+          <Text style={[styles.choiceText, { color: palette.label }]}>Version</Text>
+          <Text style={[styles.versionValue, { color: palette.text }]}>{`v${'1.0.0'} (${'1'})`}</Text>
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -501,6 +532,8 @@ const styles = StyleSheet.create({
   alarmToneText: { flex: 1 },
   alarmToneValue: { marginTop: 3, marginBottom: 0 },
   alarmSettingsRow: { marginTop: 10 },
+  versionRow: { minHeight: 50, borderWidth: 1, borderRadius: 10, paddingHorizontal: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  versionValue: { fontSize: 15, fontWeight: '600' },
   helper: { marginTop: 7, fontSize: 13, lineHeight: 18 },
   wrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   choice: { minHeight: 40, paddingHorizontal: 14, borderWidth: 1, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
