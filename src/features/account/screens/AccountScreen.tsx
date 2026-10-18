@@ -53,6 +53,7 @@ const SNOOZE_OPTIONS = [5, 10, 30, 60];
 const SOUND_OPTIONS: { value: NonNullable<UserAccount['reminderSound']>; label: string }[] = [
   { value: 'default', label: 'Default' },
   { value: 'silent', label: 'Silent' },
+  { value: 'notification_tone', label: 'Notification Tone' },
 ];
 const APPEARANCE_OPTIONS = [
   { value: 'system' as const, label: 'System Default', icon: CircleUserRound },
@@ -382,7 +383,7 @@ export function AccountScreen() {
             />
           ))}
         </View>
-        <Text style={[styles.helper, { color: palette.muted }]}>iOS supports the system default sound or silence. Android uses the sound assigned to its reminder channel.</Text>
+        <Text style={[styles.helper, { color: palette.muted }]}>Default keeps the alarm behavior, Silent disables sound, and Notification Tone uses a single standard reminder sound.</Text>
 
         <SettingHeading icon={<CalendarDays size={18} color={palette.primary} />} title="Snooze Duration" color={palette.label} />
         <View style={styles.wrapRow}>

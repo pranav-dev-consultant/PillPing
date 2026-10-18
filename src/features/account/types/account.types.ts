@@ -14,5 +14,5 @@ export type UserAccount = {
   appearance?: AppearancePreference;
 };
 
-export type ReminderSound = 'default' | 'silent';
+export type ReminderSound = 'default' | 'silent' | 'notification_tone';
 export type AppearancePreference = 'system' | 'light' | 'dark';

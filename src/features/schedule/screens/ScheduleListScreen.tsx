@@ -96,7 +96,7 @@ export function ScheduleListScreen() {
       const interval = setInterval(() => {
         setNow(new Date());
         void refreshHistory();
-      }, 20000);
+      }, 60000);
       return () => clearInterval(interval);
     }, [refresh, refreshHistory]),
   );
@@ -176,6 +176,7 @@ export function ScheduleListScreen() {
           <ScheduleCard
             schedule={item}
             occurrences={getCardOccurrences(item, now, historyById, notificationTarget)}
+            historyById={historyById}
             now={now}
             focusedOccurrenceId={notificationTarget?.scheduleId === item.id ? notificationTarget.occurrenceId : undefined}
             onPress={() => navigation.navigate('CreateSchedule', { mode: 'edit', schedule: item })}

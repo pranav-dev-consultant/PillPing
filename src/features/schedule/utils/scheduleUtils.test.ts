@@ -1,9 +1,12 @@
 import {
+  formatCountdown,
   formatRepeat,
+  getNextScheduleOccurrence,
   getScheduleOccurrencesOnDate,
   normalizeSchedule,
   normalizeScheduleTimes,
 } from './scheduleUtils';
+import type { HistoryItem } from '../../history/types/history.types';
 import type { Schedule } from '../types/schedule.types';
 
 const schedule = (overrides: Partial<Schedule> = {}): Schedule => ({
@@ -71,5 +74,45 @@ describe('schedule occurrences', () => {
     expect(getScheduleOccurrencesOnDate(schedule({
       repeat: { type: 'weekly' },
     }), new Date(2026, 9, 1))).toEqual([]);
+  });
+
+  it('finds the next valid future occurrence while skipping completed doses', () => {
+    const history = new Map<string, HistoryItem>([
+      [`occurrence-${encodeURIComponent('schedule-1:2026-09-30:08:00')}`, {
+        id: `occurrence-${encodeURIComponent('schedule-1:2026-09-30:08:00')}`,
+        scheduleId: 'schedule-1',
+        scheduleTitle: 'Paracetamol',
+        scheduledAt: '2026-09-30T08:00:00.000Z',
+        status: 'taken',
+      }],
+    ]);
+
+    const daily = getNextScheduleOccurrence(schedule({
+      startDate: '2026-09-30',
+      times: ['08:00', '20:00'],
+      repeat: { type: 'daily' },
+    }), new Date(2026, 8, 30, 15, 0), history);
+
+    expect(daily?.scheduledAt.getHours()).toBe(20);
+    expect(daily?.scheduledAt.getMinutes()).toBe(0);
+
+    const alternate = getNextScheduleOccurrence(schedule({
+      startDate: '2026-09-30',
+      times: ['08:00'],
+      repeat: { type: 'custom', customRepeatType: 'every_other_day' },
+    }), new Date(2026, 8, 30, 15, 0), history);
+
+    expect(alternate?.scheduledAt.getDate()).toBe(2);
+    expect(alternate?.scheduledAt.getHours()).toBe(8);
+  });
+});
+
+describe('countdown formatting', () => {
+  it('formats the remaining time exactly as required', () => {
+    expect(formatCountdown(28 * 60 * 60 * 1000 + 2 * 60 * 1000)).toBe('Next dose in 1d, 4h, 2m');
+    expect(formatCountdown(2 * 60 * 60 * 1000 + 2 * 60 * 1000)).toBe('Next dose in 2h, 2m');
+    expect(formatCountdown(25 * 60 * 1000)).toBe('Next dose in 25m');
+    expect(formatCountdown(0)).toBe('No upcoming dose');
+    expect(formatCountdown(-1000)).toBe('No upcoming dose');
   });
 });

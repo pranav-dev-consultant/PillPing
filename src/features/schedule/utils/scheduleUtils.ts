@@ -1,3 +1,4 @@
+import type { HistoryItem } from '../../history/types/history.types';
 import type { CreateScheduleInput, CustomRepeatType, Schedule } from '../types/schedule.types';
 import { isValidTime } from '../../../utils/validation';
 
@@ -88,6 +89,75 @@ export function formatScheduleTime(time: string): string {
   const suffix = hour >= 12 ? 'PM' : 'AM';
   const displayHour = hour % 12 || 12;
   return `${displayHour}:${minuteString} ${suffix}`;
+}
+
+export function formatCountdown(remainingMs: number): string {
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return 'No upcoming dose';
+
+  const totalMinutes = Math.floor(remainingMs / (60 * 1000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (days > 0) {
+    const segments = [`${days}d`];
+    if (hours > 0) segments.push(`${hours}h`);
+    if (minutes > 0) segments.push(`${minutes}m`);
+    return `Next dose in ${segments.join(', ')}`;
+  }
+
+  if (hours > 0) {
+    const segments = [`${hours}h`];
+    if (minutes > 0) segments.push(`${minutes}m`);
+    return `Next dose in ${segments.join(', ')}`;
+  }
+
+  const minuteValue = Math.max(1, totalMinutes || 1);
+  return `Next dose in ${minuteValue}m`;
+}
+
+function isOccurrenceComplete(
+  historyById: Map<string, HistoryItem> | undefined,
+  occurrenceId: string,
+): boolean {
+  const item = historyById?.get(`occurrence-${encodeURIComponent(occurrenceId)}`);
+  return item?.status === 'taken' || item?.status === 'skipped';
+}
+
+export function getNextScheduleOccurrence(
+  schedule: Schedule,
+  now: Date = new Date(),
+  historyById?: Map<string, HistoryItem>,
+): ScheduleOccurrence | undefined {
+  if (!schedule.isActive) return undefined;
+
+  const times = normalizeScheduleTimes(schedule);
+  if (times.length === 0) return undefined;
+
+  const startDate = parseDateKey(schedule.startDate);
+  if (!startDate) return undefined;
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const searchStart = startDate > today ? new Date(startDate) : new Date(today);
+
+  for (let dayOffset = 0; dayOffset < 3660; dayOffset += 1) {
+    const currentDate = new Date(searchStart);
+    currentDate.setDate(searchStart.getDate() + dayOffset);
+
+    if (!getScheduleOccurrencesOnDate(schedule, currentDate).length && schedule.repeat.type === 'once') {
+      break;
+    }
+
+    for (const occurrence of getScheduleOccurrencesOnDate(schedule, currentDate)) {
+      if (occurrence.scheduledAt.getTime() <= now.getTime()) continue;
+      if (isOccurrenceComplete(historyById, occurrence.occurrenceId)) continue;
+      return occurrence;
+    }
+
+    if (schedule.repeat.type === 'once') break;
+  }
+
+  return undefined;
 }
 
 export function normalizeScheduleTimes(schedule: { times?: string[]; time?: string }): string[] {

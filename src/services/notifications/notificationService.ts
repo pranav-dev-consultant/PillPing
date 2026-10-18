@@ -15,6 +15,7 @@ import {
   reactivateSnoozedOccurrence,
   upsertHistoryItemForOccurrence,
 } from '../../features/history/services/historyService';
+import type { ReminderSound } from '../../features/account/types/account.types';
 import type { Schedule } from '../../features/schedule/types/schedule.types';
 import { formatScheduleTime, getScheduleOccurrencesOnDate, normalizeSchedule, normalizeScheduleTimes } from '../../features/schedule/utils/scheduleUtils';
 import { STORAGE_KEYS, getStoredValue, setStoredValue } from '../storage/storageService';
@@ -49,7 +50,6 @@ const ACTION_TAKEN = 'taken';
 const ACTION_SKIPPED = 'skipped';
 const ACTION_SNOOZE = 'snooze';
 const PREVIEW_NOTIFICATION_ID = 'pillping-alarm-tone-preview';
-type ReminderSound = 'default' | 'silent';
 type NotificationPreferences = {
   alarmTone?: AlarmToneId;
   alarmToneSelection?: AlarmToneSelection;
@@ -219,9 +219,9 @@ function buildNotification(
       channelId: resolvedTone.channelId,
       pressAction: { id: ACTION_OPEN, launchActivity: 'default' },
       fullScreenAction: { id: ACTION_OPEN, launchActivity: 'default' },
-      ongoing: true,
+      ongoing: sound === 'default',
       autoCancel: false,
-      loopSound: sound !== 'silent',
+      loopSound: sound === 'default',
       lightUpScreen: true,
       actions: [
         { title: 'Taken', pressAction: { id: ACTION_TAKEN } },
@@ -231,7 +231,11 @@ function buildNotification(
     },
     ios: {
       categoryId: IOS_CATEGORY_ID,
-      ...(sound === 'default' && resolvedTone.iosSound ? { sound: resolvedTone.iosSound } : {}),
+      ...(sound === 'default' && resolvedTone.iosSound
+        ? { sound: resolvedTone.iosSound }
+        : sound === 'notification_tone'
+          ? { sound: 'default' }
+          : {}),
       foregroundPresentationOptions: {
         banner: true,
         list: true,
@@ -261,7 +265,7 @@ async function configureNotificationPresentation(
       id: channelId,
       name: `${tone.name} medicine reminders`,
       importance: AndroidImportance.HIGH,
-      sound: sound === 'default' ? getAndroidAlarmSound(tone) : undefined,
+      sound: sound === 'default' ? getAndroidAlarmSound(tone) : sound === 'notification_tone' ? 'default' : undefined,
       vibration: true,
     });
     return { channelId };
@@ -280,6 +284,9 @@ async function configureNotificationPresentation(
     ]);
     if (selection.source === 'builtin' && sound === 'default') {
       return { channelId: '', iosSound: getIOSAlarmSound(getAlarmTone(selection.toneId)) };
+    }
+    if (sound === 'notification_tone') {
+      return { channelId: '', iosSound: 'default' };
     }
   }
   return { channelId: '' };
@@ -362,10 +369,14 @@ async function refreshPendingSnoozeTones(
   await Promise.all(snoozes.map(async ({ notification, trigger }) => {
     if (!notification.id || trigger.type !== TriggerType.TIMESTAMP) return;
     const ios = { ...notification.ios };
-    if (sound === 'silent' || !resolvedTone.iosSound) {
+    if (sound === 'silent') {
       delete ios.sound;
-    } else {
+    } else if (sound === 'notification_tone') {
+      ios.sound = 'default';
+    } else if (resolvedTone.iosSound) {
       ios.sound = resolvedTone.iosSound;
+    } else {
+      delete ios.sound;
     }
     await notifee.cancelTriggerNotification(notification.id);
     await notifee.createTriggerNotification(
@@ -662,9 +673,9 @@ async function snoozeNotification(notification: Notification): Promise<void> {
       channelId: resolvedTone.channelId,
       pressAction: { id: ACTION_OPEN, launchActivity: 'default' },
       fullScreenAction: { id: ACTION_OPEN, launchActivity: 'default' },
-      ongoing: true,
+      ongoing: reminderSound === 'default',
       autoCancel: false,
-      loopSound: reminderSound !== 'silent',
+      loopSound: reminderSound === 'default',
       lightUpScreen: true,
       actions: [
         { title: 'Taken', pressAction: { id: ACTION_TAKEN } },
@@ -674,7 +685,11 @@ async function snoozeNotification(notification: Notification): Promise<void> {
     },
     ios: {
       categoryId: IOS_CATEGORY_ID,
-      ...(reminderSound === 'default' && resolvedTone.iosSound ? { sound: resolvedTone.iosSound } : {}),
+      ...(reminderSound === 'default' && resolvedTone.iosSound
+        ? { sound: resolvedTone.iosSound }
+        : reminderSound === 'notification_tone'
+          ? { sound: 'default' }
+          : {}),
       foregroundPresentationOptions: { banner: true, list: true, sound: true },
     },
   };
